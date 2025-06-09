@@ -33,12 +33,12 @@ npx --no-install tsx ./src/aws/cf/infra.ts --check
 # Any file you pass via --file will be uploaded to S3 and made available to the 
 # EC2 instance at `/var/lib/job/${filename}`
 # If you pass a script (.sh) via --script, it will be uploaded to S3 and executed on the EC2 instance as root on bootup
-npx --no-install tsx ./src/aws/cf/infra.ts --create --file ./src/zk/example/circuit.circom --script ./tests/hello-world.sh
+npx --no-install tsx ./src/aws/cf/infra.ts --create --file ./tests/circuit.circom --script ./scripts/run-ceremony.sh
 # > Creating bucket stack 'job-bucket-stack'...
 # > Uploading circuit.circom to s3://job-bucket-stack-jobbucket-ueyfllwekgqk/circuit.circom...
-# > upload: src/zk/example/circuit.circom to s3://job-bucket-stack-jobbucket-ueyfllwekgqk/circuit.circom
-# > Uploading script hello-world.sh to s3://job-bucket-stack-jobbucket-ueyfllwekgqk/hello-world.sh...
-# > upload: tests/hello-world.sh to s3://job-bucket-stack-jobbucket-ueyfllwekgqk/hello-world.sh
+# > upload: tests/circuit.circom to s3://job-bucket-stack-jobbucket-ueyfllwekgqk/circuit.circom
+# > Uploading script run-enclave-ceremony.ts to s3://job-bucket-stack-jobbucket-ueyfllwekgqk/run-enclave-ceremony.ts...
+# > upload: scripts/run-enclave-ceremony.ts to s3://job-bucket-stack-jobbucket-ueyfllwekgqk/run-enclave-ceremony.ts
 # > Deploying CloudFormation stack 'job-ec2-stack'. This may take a few minutes...
 # > Stack created.
 
@@ -58,7 +58,7 @@ npx --no-install tsx ./src/aws/cf/infra.ts --session
 From within the SSM session, you can join the tmux session
 ```bash
 # Join the tmux session to see the output of your script
-ec2-user@ip-172-31-53-123 ~$ sudo tmux a
+ec2-user@ip-172-31-53-123 ~$ sudo su - ec2-user -c "tmux a"
 # > You'll see the output of your script here 
 # > Type 'exit' to exit the session
 ```

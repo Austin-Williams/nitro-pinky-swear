@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >
-  Programmatic EC2 job runner. Launches a user-selectable instance type (default r8g.16xlarge, Graviton 4) with Nitro Enclaves enabled, using the latest AL2023 Arm64 AMI (automatically resolved via SSM). Copies user chosen files and script to the instance and runs the user script as root in a tmux session.
+  Programmatic EC2 job runner. Launches a user-selectable instance type (default r8g.16xlarge, Graviton 4) with Nitro Enclaves enabled, using the latest AL2023 Arm64 AMI (automatically resolved via SSM). Copies user chosen files and script to the instance and runs the user script as ec2-user in a tmux session.
 
 # ------------------------------------------------------------
 # Parameters (none – fully opinionated)
@@ -76,6 +76,12 @@ Resources:
     Properties:
       InstanceType: !Ref InstanceType
       ImageId: !Ref LatestAmiId
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 800
+            VolumeType: gp3
+            DeleteOnTermination: true
       IamInstanceProfile: !Ref JobInstanceProfile
       EnclaveOptions:
         Enabled: true
@@ -100,39 +106,45 @@ Resources:
               # ----------------------------------------------------------
 
               # Directories used by this template
-              SETUP_DIR="/opt/setup"
-              JOB_DIR="/var/lib/job"
+              EC2_USER_HOME="/home/ec2-user"
+              SETUP_DIR="$EC2_USER_HOME/setup"
+              JOB_DIR="$EC2_USER_HOME/job"
 
               mkdir -p "$SETUP_DIR" "$JOB_DIR"
+              chown -R ec2-user:ec2-user "$EC2_USER_HOME"
 
               # Write the helper script inside $SETUP_DIR so it is kept
-              # separate from the downloaded user artefacts.
+              # separate from the downloaded user artifacts.
 
-              cat << 'EOF_SCRIPT' > /opt/setup/run_userdata.sh
+              cat << 'EOF_SCRIPT' > "$SETUP_DIR/run_userdata.sh"
               #!/bin/bash
               set -euo pipefail
               echo "Starting UserData in tmux session..."
-              DOWNLOAD_DIR="/var/lib/job"
+              DOWNLOAD_DIR="$HOME/job"
 
               if [ -n "${Files}" ]; then
                 for KEY in $(echo "${Files}" | tr ',' ' '); do
-                  until aws s3 cp s3://${Bucket}/$KEY "$DOWNLOAD_DIR/$KEY"; do
+                  # Extract just the filename without the path
+                  FILENAME=$(basename "$KEY")
+                  until aws s3 cp s3://${Bucket}/$KEY "$DOWNLOAD_DIR/$FILENAME"; do
                     echo "Waiting for s3://${Bucket}/$KEY..."
                     sleep 5
                   done
-                  echo "Downloaded $KEY to $DOWNLOAD_DIR/$KEY"
+                  echo "Downloaded $KEY to $DOWNLOAD_DIR/$FILENAME"
                 done
               fi
 
               SCRIPT_PATH="${Script}"
               if [ -n "$SCRIPT_PATH" ]; then
-                until aws s3 cp s3://${Bucket}/$SCRIPT_PATH "$DOWNLOAD_DIR/$SCRIPT_PATH"; do
+                # Extract just the filename without the path
+                SCRIPT_FILENAME=$(basename "$SCRIPT_PATH")
+                until aws s3 cp s3://${Bucket}/$SCRIPT_PATH "$DOWNLOAD_DIR/$SCRIPT_FILENAME"; do
                   echo "Waiting for s3://${Bucket}/$SCRIPT_PATH..."
                   sleep 5
                 done
-                chmod +x "$DOWNLOAD_DIR/$SCRIPT_PATH"
-                bash "$DOWNLOAD_DIR/$SCRIPT_PATH"
-                echo "Ran script $DOWNLOAD_DIR/$SCRIPT_PATH"
+                chmod +x "$DOWNLOAD_DIR/$SCRIPT_FILENAME"
+                bash "$DOWNLOAD_DIR/$SCRIPT_FILENAME"
+                echo "Ran script $DOWNLOAD_DIR/$SCRIPT_FILENAME"
               fi
               echo "UserData tasks complete."
               EOF_SCRIPT
@@ -141,30 +153,46 @@ Resources:
               # Make the helper script executable
               # ----------------------------------------------------------
 
-              chmod +x /opt/setup/run_userdata.sh
+              chmod +x "$SETUP_DIR/run_userdata.sh"
+              chown ec2-user:ec2-user "$SETUP_DIR/run_userdata.sh"
 
+              # ----------------------------------------------------------
+              # Ensure ec2-user has AWS credentials access
+              # ----------------------------------------------------------
+              
+              # Ensure ec2-user can access AWS credentials via instance profile
+              mkdir -p "$EC2_USER_HOME/.aws"
+              cat << 'EOF_AWS' > "$EC2_USER_HOME/.aws/config"
+              [default]
+              region = ${AWS::Region}
+              EOF_AWS
+              chown -R ec2-user:ec2-user "$EC2_USER_HOME/.aws"
+              
               # ----------------------------------------------------------
               # Configure tmux defaults for better operator experience
               # ----------------------------------------------------------
 
-              cat << 'EOF_TMUX' > /root/.tmux.conf
+              # Create tmux config for ec2-user
+              cat << 'EOF_TMUX' > "$EC2_USER_HOME/.tmux.conf"
               # keep more lines in the scrollback buffer
               set -g history-limit 50000
               # let you scroll with your mouse wheel
               set -g mouse on
               EOF_TMUX
+              chown ec2-user:ec2-user "$EC2_USER_HOME/.tmux.conf"
 
               # ----------------------------------------------------------
               # Launch the UserData script in a named, detached tmux 
-              # session as **root**
+              # session as ec2-user
               # ----------------------------------------------------------
 
               # We purposely keep the pane open after the script finishes so
-              # that operators can later attach (e.g. via `sudo tmux attach
+              # that operators can later attach (e.g. via `tmux attach
               # -t userdata`) and inspect all scroll-back.
 
-              tmux new-session -d -s userdata \
-              "bash -lc '/opt/setup/run_userdata.sh; EXIT=\$?; echo \"[run_userdata.sh exited with code \$EXIT] UserData complete. You can now inspect the logs.\"; echo \"Type exit or press Ctrl+D to close this pane.\"; exec bash -i'"
+              # Run tmux as ec2-user
+              sudo -u ec2-user tmux new-session -d -s userdata \
+              "bash -lc '$SETUP_DIR/run_userdata.sh; EXIT=\$?; echo \"[run_userdata.sh exited with code \$EXIT] UserData complete. You can now inspect the logs.\"; echo \"Type exit or press Ctrl+D to close this pane.\"; exec bash -i'"
             - Bucket: !Ref BucketName
               Files: !Join [ ",", !Ref InputFiles ]
               Script: !Ref ScriptKey

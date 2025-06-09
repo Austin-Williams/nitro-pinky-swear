@@ -19,6 +19,59 @@ else
   echo "Correct architecture (aarch64) detected."
 fi
 
+# Change to home directory
+cd $HOME
+
+# Create ceremony directory if it doesn't exist
+mkdir -p ./ceremony
+chmod 755 ./ceremony
+
+# Create artifacts directory if it doesn't exist
+mkdir -p ./ceremony/artifacts
+chmod 755 ./ceremony/artifacts
+
+# Check if a file named circuit.circom exists in the job directory
+if [ ! -f "$HOME/job/circuit.circom" ]; then
+	echo "Error: circuit.circom not found in $HOME/job directory. Please check the file was uploaded correctly. Exiting." >&2
+	exit 1
+fi
+
+# Copy the circuit file to the ceremony directory
+cp "$HOME/job/circuit.circom" "$HOME/ceremony/circuit.circom"
+
+# Install git
+if ! command -v git &> /dev/null; then
+    echo "Installing git..."
+    sudo dnf install -y git
+    echo "git installed."
+else
+    echo "git is already installed."
+fi
+
+# Install development tools including gcc compiler
+echo "Installing development tools (gcc, make, etc.)..."
+sudo dnf groupinstall -y "Development Tools"
+echo "Development tools installed."
+
+# Install AWS Nitro CLI tools
+echo "Installing AWS Nitro CLI tools..."
+sudo dnf install -y aws-nitro-enclaves-cli aws-nitro-enclaves-cli-devel
+sudo systemctl start nitro-enclaves-allocator.service
+sudo systemctl enable nitro-enclaves-allocator.service
+echo "AWS Nitro CLI tools installed."
+
+# Install Docker using the Amazon Linux 2023 method
+echo "Installing Docker..."
+sudo dnf install -y docker
+sudo systemctl enable docker
+sudo systemctl start docker
+sudo usermod -aG docker ec2-user
+echo "Docker installed and started."
+
+# Clone the nitro-pinky-swear repo
+git clone https://github.com/Austin-Williams/nitro-pinky-swear.git
+cd $HOME/nitro-pinky-swear
+
 # Check if rustc 1.75.x is installed
 if command -v rustc >/dev/null 2>&1; then
     RUST_VERSION=$(rustc --version | awk '{print $2}')
@@ -63,32 +116,7 @@ if [ "$CIRCOM_OK" -ne 1 ]; then
     echo "circom v$CIRCOM_VERSION_REQUIRED installed."
 fi
 
-# Check if Docker version 25.0.8 is installed, and if not then install it
-REQUIRED_DOCKER_VERSION="25.0.8"
-DOCKER_BIN="$(command -v docker || true)"
-DOCKER_OK=0
-
-if [ -n "$DOCKER_BIN" ]; then
-    DOCKER_VERSION_OUTPUT="$($DOCKER_BIN --version 2>&1)"
-    if echo "$DOCKER_VERSION_OUTPUT" | grep -q "version $REQUIRED_DOCKER_VERSION"; then
-        echo "Docker $REQUIRED_DOCKER_VERSION is already installed."
-        DOCKER_OK=1
-    fi
-fi
-
-if [ "$DOCKER_OK" -ne 1 ]; then
-    echo "Installing Docker $REQUIRED_DOCKER_VERSION..."
-    # Remove any old versions
-    sudo dnf remove -y docker docker-client docker-client-latest docker-common docker-latest docker-latest-logrotate docker-logrotate docker-engine || true
-    # Install required dependencies
-    sudo dnf install -y dnf-plugins-core
-    # Add Docker repository
-    sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-    # Install specific version
-    sudo dnf install -y docker-ce-25.0.8 docker-ce-cli-25.0.8 containerd.io
-    sudo systemctl enable --now docker
-    echo "Docker $REQUIRED_DOCKER_VERSION installed."
-fi
+cd $HOME/nitro-pinky-swear
 
 # Check if Node.js v18 is installed, and if not then install it
 REQUIRED_NODE_MAJOR="18"
@@ -115,22 +143,10 @@ if [ "$NODE_OK" -ne 1 ]; then
      echo "Node.js v$REQUIRED_NODE_MAJOR installed."
  fi
 
+
 # Install node packages
+cd $HOME/nitro-pinky-swear
 npm install
-
-# Create ceremony directory if it doesn't exist
-mkdir -p ./ceremony
-chmod 755 ./ceremony
-
-# Create artifacts directory if it doesn't exist
-mkdir -p ./ceremony/artifacts
-chmod 755 ./ceremony/artifacts
-
-# Check if a file named circuit.circom exists in ceremony directory
-if [ ! -f "./ceremony/circuit.circom" ]; then
-	echo "Error: circuit.circom not found in ceremony directory. Please put your file there. Exiting." >&2
-	exit 1
-fi
 
 # build the eif (requires sudo)
 echo "Building EIF..."
