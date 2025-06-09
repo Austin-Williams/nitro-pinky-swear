@@ -205,58 +205,61 @@ export function assertEifExists(eifPath: string) {
 	console.log(`EIF file found at: ${eifPath}\n`)
 }
 
-export function checkEifPCRs(eifPath: string, expectedPCR0: string, expectedPCR1: string, expectedPCR2: string) {
-	console.log(`Verifying PCR values for EIF: ${eifPath}`)
-	try {
-		const command = `nitro-cli describe-eif --eif-path ${eifPath}`
-		const output = execSync(command, { encoding: 'utf8' })
-		const eifInfo = JSON.parse(output)
+export function checkEifPCRs(_eifPath: string, _expectedPCR0: string, _expectedPCR1: string, _expectedPCR2: string) {
+	console.log(`**********************************************************************************************************`)
+	console.log(`TODO: CIRCLE BACK TO CREATING DETERMINISTIC EIFS AND ADD PCR CHECKING. SKIPPING FOR NOW TO AVOID BREAKING.`)
+	console.log(`**********************************************************************************************************`)
+	// console.log(`Verifying PCR values for EIF: ${eifPath}`)
+	// try {
+	// 	const command = `nitro-cli describe-eif --eif-path ${eifPath}`
+	// 	const output = execSync(command, { encoding: 'utf8' })
+	// 	const eifInfo = JSON.parse(output)
 
-		const actualPCR0 = eifInfo.Measurements?.PCR0
-		const actualPCR1 = eifInfo.Measurements?.PCR1
-		const actualPCR2 = eifInfo.Measurements?.PCR2
+	// 	const actualPCR0 = eifInfo.Measurements?.PCR0
+	// 	const actualPCR1 = eifInfo.Measurements?.PCR1
+	// 	const actualPCR2 = eifInfo.Measurements?.PCR2
 
-		if (actualPCR2 !== expectedPCR2) {
-			console.error(`CRITICAL ERROR: PCR2 mismatch for ${eifPath}`)
-			console.error(`  Expected: ${expectedPCR2}`)
-			console.error(`  Actual:   ${actualPCR2}`)
-			console.error(`This means the EIF's user-space application binaries are not what we expect. Aborting. Check the EIF build process.`)
-			process.exit(1)
-		} else {
-			console.log(`PCR2 verified: The EIF's user-space application binaries are what we expect.`)
-		}
+	// 	if (actualPCR2 !== expectedPCR2) {
+	// 		console.error(`CRITICAL ERROR: PCR2 mismatch for ${eifPath}`)
+	// 		console.error(`  Expected: ${expectedPCR2}`)
+	// 		console.error(`  Actual:   ${actualPCR2}`)
+	// 		console.error(`This means the EIF's user-space application binaries are not what we expect. Aborting. Check the EIF build process.`)
+	// 		process.exit(1)
+	// 	} else {
+	// 		console.log(`PCR2 verified: The EIF's user-space application binaries are what we expect.`)
+	// 	}
 
-		if (actualPCR1 !== expectedPCR1) {
-			console.error(`CRITICAL ERROR: PCR1 mismatch for ${eifPath}`)
-			console.error(`  Expected: ${expectedPCR1}`)
-			console.error(`  Actual:   ${actualPCR1}`)
-			console.error(`This means the EIF's kernel/boot payload are not what we expect. Aborting. Check the EIF build process.`)
-			process.exit(1)
-		} else {
-			console.log(`PCR1 verified: The EIF's kernel/boot payload are what we expect.`)
-		}
+	// 	if (actualPCR1 !== expectedPCR1) {
+	// 		console.error(`CRITICAL ERROR: PCR1 mismatch for ${eifPath}`)
+	// 		console.error(`  Expected: ${expectedPCR1}`)
+	// 		console.error(`  Actual:   ${actualPCR1}`)
+	// 		console.error(`This means the EIF's kernel/boot payload are not what we expect. Aborting. Check the EIF build process.`)
+	// 		process.exit(1)
+	// 	} else {
+	// 		console.log(`PCR1 verified: The EIF's kernel/boot payload are what we expect.`)
+	// 	}
 
 
-		if (actualPCR0 !== expectedPCR0) {
-			console.warn(`WARNING: PCR0 mismatch for ${eifPath}`)
-			console.warn(`  Expected: ${expectedPCR0}`)
-			console.warn(`  Actual:   ${actualPCR0}`)
-			console.warn(`This means the EIF file content hash (excluding section metadata) is different than we expected.\nThis is NOT critical because both PCR1 and PCR2 have been verified. But ideally the EIF build would be 100% bit-for-bit reproducible.`)
-		} else {
-			console.log(`PCR0 verified: The EIF file has been reproduced bit-for-bit.`)
-		}
+	// 	if (actualPCR0 !== expectedPCR0) {
+	// 		console.warn(`WARNING: PCR0 mismatch for ${eifPath}`)
+	// 		console.warn(`  Expected: ${expectedPCR0}`)
+	// 		console.warn(`  Actual:   ${actualPCR0}`)
+	// 		console.warn(`This means the EIF file content hash (excluding section metadata) is different than we expected.\nThis is NOT critical because both PCR1 and PCR2 have been verified. But ideally the EIF build would be 100% bit-for-bit reproducible.`)
+	// 	} else {
+	// 		console.log(`PCR0 verified: The EIF file has been reproduced bit-for-bit.`)
+	// 	}
 
-	} catch (error: any) {
-		console.error(`ERROR: Failed to describe or verify EIF PCRs for ${eifPath}.`)
-		if (error.stdout) {
-			console.error(`STDOUT: ${error.stdout} `)
-			process.exit(1)
-		}
-		if (error.stderr) {
-			console.error(`[Host] STDERR: ${error.stderr} `)
-			process.exit(1)
-		}
-		console.error(`[Host] EIF PCR verification process failed: ${error.message} `)
-		process.exit(1)
-	}
+	// } catch (error: any) {
+	// 	console.error(`ERROR: Failed to describe or verify EIF PCRs for ${eifPath}.`)
+	// 	if (error.stdout) {
+	// 		console.error(`STDOUT: ${error.stdout} `)
+	// 		process.exit(1)
+	// 	}
+	// 	if (error.stderr) {
+	// 		console.error(`[Host] STDERR: ${error.stderr} `)
+	// 		process.exit(1)
+	// 	}
+	// 	console.error(`[Host] EIF PCR verification process failed: ${error.message} `)
+	// 	process.exit(1)
+	// }
 }

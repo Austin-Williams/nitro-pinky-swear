@@ -16,7 +16,7 @@ Can only support circuit sizes up to 2^26 (64M max constraints), due to the Nitr
 (Can support 2^27 if you use a r8g.24xlarge instead of r8g.16xlarge. 2^27 may take 24 hours and cost $100, though it has not been tested.)
 
 ## Notes
-sudo ./docker/build-eif.sh
+sudo ./scripts/build-eif.sh
 
 // Run allocateResources manually
 tsx -e "import { allocateResources } from './src/app/host/allocate-resources.ts'; allocateResources();"
