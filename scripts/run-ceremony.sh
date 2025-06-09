@@ -44,16 +44,19 @@ cd $HOME
 git clone https://github.com/Austin-Williams/nitro-pinky-swear.git
 cd $HOME/nitro-pinky-swear
 
+# Define the ceremony directory path consistently
+CEREMONY_DIR="$HOME/nitro-pinky-swear/ceremony"
+
 # Create ceremony directory if it doesn't exist
-mkdir -p $HOME/ceremony
-chmod 755 $HOME/ceremony
+mkdir -p "$CEREMONY_DIR"
+chmod 755 "$CEREMONY_DIR"
 
 # Create artifacts directory if it doesn't exist
-mkdir -p $HOME/ceremony/artifacts
-chmod 755 $HOME/ceremony/artifacts
+mkdir -p "$CEREMONY_DIR/artifacts"
+chmod 755 "$CEREMONY_DIR/artifacts"
 
 # Copy the circuit file to the ceremony directory
-cp "$HOME/job/circuit.circom" "$HOME/ceremony/circuit.circom"
+cp "$HOME/job/circuit.circom" "$CEREMONY_DIR/circuit.circom"
 
 # Install development tools including gcc compiler
 echo "Installing development tools (gcc, make, etc.)..."
@@ -186,13 +189,45 @@ echo "Building EIF..."
 sudo ./scripts/build-eif.sh
 
 # Check if the EIF build was successful before proceeding
-EIF_PATH="./ceremony/enclave.eif"
+EIF_PATH="$CEREMONY_DIR/enclave.eif"
 if [ ! -f "$EIF_PATH" ]; then
     echo "Error: EIF file '$EIF_PATH' not found after build. Exiting." >&2
     exit 1
 fi
 echo "EIF build completed."
 
-npx tsx 'src/app/host/run-host-ceremony.ts' './ceremony/circuit.circom'
+npx tsx 'src/app/host/run-host-ceremony.ts' "$CEREMONY_DIR/circuit.circom"
 
 echo "Host ceremony script completed."
+
+# Upload artifacts to S3 bucket
+echo "Uploading ceremony artifacts to S3..."
+# Get the bucket name from the instance metadata
+BUCKET_NAME=$(aws cloudformation describe-stacks --stack-name job-bucket-stack --query "Stacks[0].Outputs[?OutputKey=='BucketName'].OutputValue" --output text)
+
+if [ -z "$BUCKET_NAME" ]; then
+    echo "Error: Could not determine S3 bucket name. Artifacts will not be uploaded." >&2
+else
+    # Create a manifest file with metadata
+    MANIFEST_FILE="$CEREMONY_DIR/artifacts/manifest.json"
+    cat > "$MANIFEST_FILE" << EOF
+{
+  "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+  "instanceId": "$(curl -s http://169.254.169.254/latest/meta-data/instance-id)",
+  "instanceType": "$(curl -s http://169.254.169.254/latest/meta-data/instance-type)",
+  "artifacts": [
+    $(find "$CEREMONY_DIR/artifacts" -type f -not -name "manifest.json" | sort | sed 's/.*/"&",/' | sed '$s/,$//')
+  ]
+}
+EOF
+
+    # Upload all artifacts to S3
+    aws s3 cp "$CEREMONY_DIR/artifacts/" "s3://$BUCKET_NAME/artifacts/" --recursive
+
+    # Upload a completion marker to signal that the ceremony is complete
+    echo "Ceremony completed at $(date -u +"%Y-%m-%dT%H:%M:%SZ")" > "$CEREMONY_DIR/completion.marker"
+    aws s3 cp "$CEREMONY_DIR/completion.marker" "s3://$BUCKET_NAME/completion.marker"
+
+    echo "Artifacts uploaded to s3://$BUCKET_NAME/artifacts/"
+    echo "Completion marker uploaded to s3://$BUCKET_NAME/completion.marker"
+fi
