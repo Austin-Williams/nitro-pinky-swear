@@ -62,25 +62,29 @@ echo "Development tools installed."
 echo "Installing AWS Nitro CLI tools..."
 sudo dnf install -y aws-nitro-enclaves-cli aws-nitro-enclaves-cli-devel
 sudo systemctl start nitro-enclaves-allocator.service
+echo "Pausing for 4 seconds..."
 sleep 4
 sudo systemctl enable nitro-enclaves-allocator.service
+echo "Pausing for 4 seconds..."
 sleep 4
 echo "AWS Nitro CLI tools installed."
 
 # Verify that we can run nitro-cli commands
-echo "Verifying nitro-cli functionality..."
-if ! command --version nitro-cli &> /dev/null; then
+echo "Verifying nitro-cli functionality with 'command -v nitro-cli'..."
+if ! command -v nitro-cli &> /dev/null; then
   echo "Error: nitro-cli command not found. Installation may have failed." >&2
   exit 1
 fi
 
 # Try to run a simple nitro-cli command
+echo "Verifying nitro-cli functionality with 'nitro-cli --version'..."
 if ! nitro-cli --version &> /dev/null; then
   echo "Error: Unable to execute nitro-cli --version. Installation may be incomplete." >&2
   exit 1
 fi
 
 # Check if we can list enclaves
+echo "Verifying nitro-cli functionality with 'nitro-cli describe-enclaves'..."	
 if ! nitro-cli describe-enclaves &> /dev/null; then
   echo "Error: Unable to execute nitro-cli describe-enclaves. Nitro Enclaves service may not be running properly." >&2
   echo "Please check the Nitro Enclaves logs at /var/log/nitro_enclaves/nitro_enclaves.log" >&2
@@ -93,8 +97,10 @@ echo "nitro-cli verification successful."
 echo "Installing Docker..."
 sudo dnf install -y docker
 sudo systemctl enable docker
+echo "Pausing for 4 seconds..."
 sleep 4
 sudo systemctl start docker
+echo "Pausing for 4 seconds..."
 sleep 4
 sudo usermod -aG docker ec2-user
 echo "Docker installed and started."
