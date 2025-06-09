@@ -2,6 +2,11 @@
 
 # This script is intended to be run on an ARM64/Graviton EC2 instance with AWS Nitro Enclaves enabled.
 
+# Set up logging to both console and file
+LOG_FILE="$HOME/run-ceremony-$(date +%Y%m%d-%H%M%S).log"
+exec > >(tee -a "$LOG_FILE") 2>&1
+echo "Logging all output to $LOG_FILE"
+
 # Ensure this script is not run as root initially
 if [ "$(id -u)" -eq 0 ]; then
   echo "This script should be run as ec2-user, not as root." >&2
@@ -59,6 +64,28 @@ sudo dnf install -y aws-nitro-enclaves-cli aws-nitro-enclaves-cli-devel
 sudo systemctl start nitro-enclaves-allocator.service
 sudo systemctl enable nitro-enclaves-allocator.service
 echo "AWS Nitro CLI tools installed."
+
+# Verify that we can run nitro-cli commands
+echo "Verifying nitro-cli functionality..."
+if ! command --version nitro-cli &> /dev/null; then
+  echo "Error: nitro-cli command not found. Installation may have failed." >&2
+  exit 1
+fi
+
+# Try to run a simple nitro-cli command
+if ! nitro-cli --version &> /dev/null; then
+  echo "Error: Unable to execute nitro-cli --version. Installation may be incomplete." >&2
+  exit 1
+fi
+
+# Check if we can list enclaves
+if ! nitro-cli describe-enclaves &> /dev/null; then
+  echo "Error: Unable to execute nitro-cli describe-enclaves. Nitro Enclaves service may not be running properly." >&2
+  echo "Please check the Nitro Enclaves logs at /var/log/nitro_enclaves/nitro_enclaves.log" >&2
+  exit 1
+fi
+
+echo "nitro-cli verification successful."
 
 # Install Docker using the Amazon Linux 2023 method
 echo "Installing Docker..."
@@ -142,7 +169,6 @@ if [ "$NODE_OK" -ne 1 ]; then
     sudo dnf install -y --best --allowerasing nodejs
      echo "Node.js v$REQUIRED_NODE_MAJOR installed."
  fi
-
 
 # Install node packages
 cd $HOME/nitro-pinky-swear
