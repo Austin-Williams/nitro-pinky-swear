@@ -1,0 +1,181 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Programmatic EC2 job runner. Launches a user-selectable instance type (default r8g.16xlarge, Graviton 4) with Nitro Enclaves enabled, using the latest AL2023 Arm64 AMI (automatically resolved via SSM). Copies user chosen files and script to the instance and runs the user script as root in a tmux session.
+
+# ------------------------------------------------------------
+# Parameters (none – fully opinionated)
+# ------------------------------------------------------------
+
+# ------------------------------------------------------------
+# Dynamic reference to the latest AL2023 Arm64 AMI
+# ------------------------------------------------------------
+Parameters:
+  LatestAmiId:
+    Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
+    Default: "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64"
+  InputFiles:
+    Type: CommaDelimitedList
+    Default: ''
+    Description: 'Comma-separated S3 keys of input files to download'
+  ScriptKey:
+    Type: String
+    Default: ''
+    Description: 'S3 key of startup script to run'
+  BucketName:
+    Type: String
+    Description: 'Name of the existing S3 bucket that contains all job inputs and will receive outputs'
+
+# ------------------------------------------------------------
+# Instance type parameter (user-configurable)
+# ------------------------------------------------------------
+  InstanceType:
+    Type: String
+    Default: r8g.16xlarge
+    Description: 'EC2 instance type to launch (must support Nitro Enclaves). Defaults to r8g.16xlarge.'
+
+# ------------------------------------------------------------
+# Resources
+# ------------------------------------------------------------
+Resources:
+  JobRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: PutOnlyResults
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub arn:aws:s3:::${BucketName}/jobs/*
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub arn:aws:s3:::${BucketName}
+                  - !Sub arn:aws:s3:::${BucketName}/*
+
+  JobInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref JobRole
+
+  JobInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref LatestAmiId
+      IamInstanceProfile: !Ref JobInstanceProfile
+      EnclaveOptions:
+        Enabled: true
+      UserData:
+        Fn::Base64:
+          Fn::Sub:
+            - |
+              #!/bin/bash
+              set -euo pipefail
+
+              # ----------------------------------------------------------
+              # Install AWS CLI & tmux
+              # ----------------------------------------------------------
+
+              dnf install -y aws-cli tmux || yum install -y aws-cli tmux || true
+              
+              # ----------------------------------------------------------
+              # Write a script (named run_userdata.sh) that will download 
+              # the user's files (if any) and script (if any) from the 
+              # S3 bucket, and then run the user's script in a tmux session
+              # (so the user can attach to the session later and inspect it).
+              # ----------------------------------------------------------
+
+              # Directories used by this template
+              SETUP_DIR="/opt/setup"
+              JOB_DIR="/var/lib/job"
+
+              mkdir -p "$SETUP_DIR" "$JOB_DIR"
+
+              # Write the helper script inside $SETUP_DIR so it is kept
+              # separate from the downloaded user artefacts.
+
+              cat << 'EOF_SCRIPT' > /opt/setup/run_userdata.sh
+              #!/bin/bash
+              set -euo pipefail
+              echo "Starting UserData in tmux session..."
+              DOWNLOAD_DIR="/var/lib/job"
+
+              if [ -n "${Files}" ]; then
+                for KEY in $(echo "${Files}" | tr ',' ' '); do
+                  until aws s3 cp s3://${Bucket}/$KEY "$DOWNLOAD_DIR/$KEY"; do
+                    echo "Waiting for s3://${Bucket}/$KEY..."
+                    sleep 5
+                  done
+                  echo "Downloaded $KEY to $DOWNLOAD_DIR/$KEY"
+                done
+              fi
+
+              SCRIPT_PATH="${Script}"
+              if [ -n "$SCRIPT_PATH" ]; then
+                until aws s3 cp s3://${Bucket}/$SCRIPT_PATH "$DOWNLOAD_DIR/$SCRIPT_PATH"; do
+                  echo "Waiting for s3://${Bucket}/$SCRIPT_PATH..."
+                  sleep 5
+                done
+                chmod +x "$DOWNLOAD_DIR/$SCRIPT_PATH"
+                bash "$DOWNLOAD_DIR/$SCRIPT_PATH"
+                echo "Ran script $DOWNLOAD_DIR/$SCRIPT_PATH"
+              fi
+              echo "UserData tasks complete."
+              EOF_SCRIPT
+
+              # ----------------------------------------------------------
+              # Make the helper script executable
+              # ----------------------------------------------------------
+
+              chmod +x /opt/setup/run_userdata.sh
+
+              # ----------------------------------------------------------
+              # Configure tmux defaults for better operator experience
+              # ----------------------------------------------------------
+
+              cat << 'EOF_TMUX' > /root/.tmux.conf
+              # keep more lines in the scrollback buffer
+              set -g history-limit 50000
+              # let you scroll with your mouse wheel
+              set -g mouse on
+              EOF_TMUX
+
+              # ----------------------------------------------------------
+              # Launch the UserData script in a named, detached tmux 
+              # session as **root**
+              # ----------------------------------------------------------
+
+              # We purposely keep the pane open after the script finishes so
+              # that operators can later attach (e.g. via `sudo tmux attach
+              # -t userdata`) and inspect all scroll-back.
+
+              tmux new-session -d -s userdata \
+              "bash -lc '/opt/setup/run_userdata.sh; EXIT=\$?; echo \"[run_userdata.sh exited with code \$EXIT] UserData complete. You can now inspect the logs.\"; echo \"Type exit or press Ctrl+D to close this pane.\"; exec bash -i'"
+            - Bucket: !Ref BucketName
+              Files: !Join [ ",", !Ref InputFiles ]
+              Script: !Ref ScriptKey
+
+# ------------------------------------------------------------
+# Outputs
+# ------------------------------------------------------------
+Outputs:
+  BucketName:
+    Description: "Bucket that stores job inputs and outputs"
+    Value: !Ref BucketName
+  InstanceId:
+    Description: "EC2 instance ID"
+    Value: !Ref JobInstance

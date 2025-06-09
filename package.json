@@ -1,0 +1,46 @@
+{
+	"name": "nitro-pinky-swear",
+	"version": "1.0.0",
+	"description": "Runs a Groth16 trusted-setup ceremony using SnarkJS inside a TEE (Nitro Enclave on AWS) then verifies the remote attestation.",
+	"keywords": [
+		"TEE",
+		"Groth16",
+		"nitro-enclave",
+		"snarkjs",
+		"circom"
+	],
+	"homepage": "https://github.com/Austin-Williams/nitro-pinky-swear#readme",
+	"bugs": {
+		"url": "https://github.com/Austin-Williams/nitro-pinky-swear/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/Austin-Williams/nitro-pinky-swear.git"
+	},
+	"license": "MIT",
+	"author": "onewayfunction",
+	"type": "module",
+	"main": "src/cli.js",
+	"scripts": {
+		"test": "echo \"Error: no test specified\" && exit 1",
+		"dev": "npx --no-install tsx src/cli.ts",
+		"start": "npx --no-install tsx src/cli.ts"
+	},
+	"dependencies": {
+		"@aws-sdk/client-cloudformation": "^3.817.0",
+		"@aws-sdk/client-ssm": "^3.817.0",
+		"cbor": "^10.0.3",
+		"commander": "^14.0.0",
+		"dotenv": "^16.5.0",
+		"drand-client": "^1.4.2",
+		"node-vsock": "^0.0.5",
+		"snarkjs": "^0.7.5",
+		"tsx": "^4.19.4"
+	},
+	"devDependencies": {
+		"@noble/curves": "^1.7.2",
+		"@noble/hashes": "^1.7.2",
+		"@types/node": "^22.15.21",
+		"@types/snarkjs": "^0.7.9"
+	}
+}

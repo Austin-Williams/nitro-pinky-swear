@@ -1,0 +1,22 @@
+{
+	"name": "enclave",
+	"type": "module",
+	"version": "1.0.0",
+	"private": true,
+	"description": "",
+	"main": "index.js",
+	"dependencies": {
+		"@noble/hashes": "1.7.2",
+		"cbor": "10.0.3",
+		"solc": "0.8.30",
+		"node-vsock": "0.0.5",
+		"snarkjs": "0.7.5",
+		"drand-client": "1.4.2",
+		"tsx": "4.19.4"
+	},
+	"scripts": {
+		"start": "./run.sh"
+	},
+	"author": "onewayfunction",
+	"license": "MIT"
+}

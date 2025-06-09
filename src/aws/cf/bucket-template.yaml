@@ -1,0 +1,26 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Dedicated S3 bucket to store user inputs and outputs.
+
+Parameters:
+  BucketName:
+    Type: String
+    Default: ''
+    Description: "Optional bucket name. Leave blank for CloudFormation-generated name."
+
+Conditions:
+  HasCustomName: !Not [ !Equals [ !Ref BucketName, "" ] ]
+
+Resources:
+  JobBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !If [ HasCustomName, !Ref BucketName, !Ref "AWS::NoValue" ]
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+Outputs:
+  BucketName:
+    Description: Name of the newly created bucket
+    Value: !Ref JobBucket

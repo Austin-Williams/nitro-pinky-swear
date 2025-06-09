@@ -1,0 +1,149 @@
+#!/bin/bash
+
+# This script is intended to be run on an ARM64/Graviton EC2 instance with AWS Nitro Enclaves enabled.
+
+# Ensure this script is not run as root initially
+if [ "$(id -u)" -eq 0 ]; then
+  echo "This script should be run as ec2-user, not as root." >&2
+  echo "It will use 'sudo' internally for commands that require root privileges." >&2
+  exit 1
+fi
+
+# Ensure we are on ARM64/Graviton EC2 instance
+ARCH=$(uname -m)
+if [ "$ARCH" != "aarch64" ]; then
+  echo "Error: This script is intended for ARM64 (aarch64) architecture (e.g., AWS Graviton instances)." >&2
+  echo "Detected architecture: $ARCH" >&2
+  exit 1
+else
+  echo "Correct architecture (aarch64) detected."
+fi
+
+# Check if rustc 1.75.x is installed
+if command -v rustc >/dev/null 2>&1; then
+    RUST_VERSION=$(rustc --version | awk '{print $2}')
+    if [[ "$RUST_VERSION" == 1.75* ]]; then
+        echo "Rust $RUST_VERSION is already installed."
+    else
+        echo "Rust version $RUST_VERSION found, but 1.75.x is required. Installing Rust 1.75..."
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.75
+        source $HOME/.cargo/env
+    fi
+else
+    echo "Rust is not installed. Installing Rust 1.75..."
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.75
+    source $HOME/.cargo/env
+fi
+
+# Check if circom v2.2.2 is installed, and if not then install it (commit de2212a7aa6a070c636cc73382a3deba8c658ad5)
+echo "Checking circom installation..."
+CIRCOM_VERSION_REQUIRED="2.2.2"
+CIRCOM_COMMIT="de2212a7aa6a070c636cc73382a3deba8c658ad5"
+CIRCOM_BIN="$(command -v circom || true)"
+CIRCOM_OK=0
+
+if [ -n "$CIRCOM_BIN" ]; then
+    CIRCOM_VERSION_OUTPUT="$($CIRCOM_BIN --version 2>&1)"
+    if echo "$CIRCOM_VERSION_OUTPUT" | grep -q "$CIRCOM_VERSION_REQUIRED"; then
+        echo "circom v$CIRCOM_VERSION_REQUIRED is already installed."
+        CIRCOM_OK=1
+    fi
+fi
+
+if [ "$CIRCOM_OK" -ne 1 ]; then
+    echo "Installing circom v$CIRCOM_VERSION_REQUIRED at commit $CIRCOM_COMMIT..."
+    rm -rf /tmp/circom
+    git clone https://github.com/iden3/circom.git /tmp/circom
+    cd /tmp/circom
+    git checkout $CIRCOM_COMMIT
+    cargo build --release
+    sudo cp target/release/circom /usr/local/bin/
+    cd /
+    rm -rf /tmp/circom
+    echo "circom v$CIRCOM_VERSION_REQUIRED installed."
+fi
+
+# Check if Docker version 25.0.8 is installed, and if not then install it
+REQUIRED_DOCKER_VERSION="25.0.8"
+DOCKER_BIN="$(command -v docker || true)"
+DOCKER_OK=0
+
+if [ -n "$DOCKER_BIN" ]; then
+    DOCKER_VERSION_OUTPUT="$($DOCKER_BIN --version 2>&1)"
+    if echo "$DOCKER_VERSION_OUTPUT" | grep -q "version $REQUIRED_DOCKER_VERSION"; then
+        echo "Docker $REQUIRED_DOCKER_VERSION is already installed."
+        DOCKER_OK=1
+    fi
+fi
+
+if [ "$DOCKER_OK" -ne 1 ]; then
+    echo "Installing Docker $REQUIRED_DOCKER_VERSION..."
+    # Remove any old versions
+    sudo dnf remove -y docker docker-client docker-client-latest docker-common docker-latest docker-latest-logrotate docker-logrotate docker-engine || true
+    # Install required dependencies
+    sudo dnf install -y dnf-plugins-core
+    # Add Docker repository
+    sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+    # Install specific version
+    sudo dnf install -y docker-ce-25.0.8 docker-ce-cli-25.0.8 containerd.io
+    sudo systemctl enable --now docker
+    echo "Docker $REQUIRED_DOCKER_VERSION installed."
+fi
+
+# Check if Node.js v18 is installed, and if not then install it
+REQUIRED_NODE_MAJOR="18"
+NODE_BIN="$(command -v node || true)"
+NODE_OK=0
+
+if [ -n "$NODE_BIN" ]; then
+    NODE_VERSION_OUTPUT="$($NODE_BIN --version 2>&1)"
+    NODE_MAJOR=$(echo "$NODE_VERSION_OUTPUT" | sed 's/v\([0-9]*\).*/\1/')
+    if [ "$NODE_MAJOR" = "$REQUIRED_NODE_MAJOR" ]; then
+        echo "Node.js v$NODE_MAJOR is already installed."
+        NODE_OK=1
+    fi
+fi
+
+if [ "$NODE_OK" -ne 1 ]; then
+     echo "Installing Node.js v$REQUIRED_NODE_MAJOR..."
+    # Remove existing Node.js packages to avoid conflicts
+    sudo dnf remove -y nodejs nodejs-npm nodejs-full-i18n || true
+    # Set up NodeSource repository for Node.js 18.x
+    curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -
+    # Install Node.js 18 with options to force installation even if it requires replacing packages
+    sudo dnf install -y --best --allowerasing nodejs
+     echo "Node.js v$REQUIRED_NODE_MAJOR installed."
+ fi
+
+# Install node packages
+npm install
+
+# Create ceremony directory if it doesn't exist
+mkdir -p ./ceremony
+chmod 755 ./ceremony
+
+# Create artifacts directory if it doesn't exist
+mkdir -p ./ceremony/artifacts
+chmod 755 ./ceremony/artifacts
+
+# Check if a file named circuit.circom exists in ceremony directory
+if [ ! -f "./ceremony/circuit.circom" ]; then
+	echo "Error: circuit.circom not found in ceremony directory. Please put your file there. Exiting." >&2
+	exit 1
+fi
+
+# build the eif (requires sudo)
+echo "Building EIF..."
+sudo ./scripts/build-eif.sh
+
+# Check if the EIF build was successful before proceeding
+EIF_PATH="./ceremony/enclave.eif"
+if [ ! -f "$EIF_PATH" ]; then
+    echo "Error: EIF file '$EIF_PATH' not found after build. Exiting." >&2
+    exit 1
+fi
+echo "EIF build completed."
+
+npx tsx 'src/app/host/run-host-ceremony.ts' './ceremony/circuit.circom'
+
+echo "Host ceremony script completed."
