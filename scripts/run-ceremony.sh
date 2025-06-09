@@ -62,7 +62,9 @@ echo "Development tools installed."
 echo "Installing AWS Nitro CLI tools..."
 sudo dnf install -y aws-nitro-enclaves-cli aws-nitro-enclaves-cli-devel
 sudo systemctl start nitro-enclaves-allocator.service
+sleep 4
 sudo systemctl enable nitro-enclaves-allocator.service
+sleep 4
 echo "AWS Nitro CLI tools installed."
 
 # Verify that we can run nitro-cli commands
@@ -91,7 +93,9 @@ echo "nitro-cli verification successful."
 echo "Installing Docker..."
 sudo dnf install -y docker
 sudo systemctl enable docker
+sleep 4
 sudo systemctl start docker
+sleep 4
 sudo usermod -aG docker ec2-user
 echo "Docker installed and started."
 
