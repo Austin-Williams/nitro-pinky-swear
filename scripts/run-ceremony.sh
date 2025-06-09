@@ -84,10 +84,9 @@ if ! nitro-cli --version &> /dev/null; then
 fi
 
 # Check if we can list enclaves
-echo "Verifying nitro-cli functionality with 'nitro-cli describe-enclaves'..."	
-if ! nitro-cli describe-enclaves &> /dev/null; then
+echo "Verifying nitro-cli functionality with 'sudo nitro-cli describe-enclaves'..."	
+if ! sudo nitro-cli describe-enclaves &> /dev/null; then
   echo "Error: Unable to execute nitro-cli describe-enclaves. Nitro Enclaves service may not be running properly." >&2
-  echo "Please check the Nitro Enclaves logs at /var/log/nitro_enclaves/nitro_enclaves.log" >&2
   exit 1
 fi
 
