@@ -50,13 +50,13 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
       Policies:
-        - PolicyName: PutOnlyResults
+        - PolicyName: S3JobAccess
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action: s3:PutObject
-                Resource: !Sub arn:aws:s3:::${BucketName}/jobs/*
+                Resource: !Sub arn:aws:s3:::${BucketName}/job/out/*
               - Effect: Allow
                 Action:
                   - s3:GetObject
