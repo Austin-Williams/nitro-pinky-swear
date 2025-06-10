@@ -26,30 +26,28 @@ npx --no-install tsx infra.ts --help
 ```bash
 # From root directory
 # Check stack status
-npx --no-install tsx ./src/aws/cf/infra.ts --check
+npx --no-install tsx ./src/aws/infra.ts --check
 # > Existing CloudFormation stacks: None
 
 # Create stack
 # Any file you pass via --file will be uploaded to S3 and made available to the 
 # EC2 instance at `/var/lib/job/${filename}`
 # If you pass a script (.sh) via --script, it will be uploaded to S3 and executed on the EC2 instance as root on bootup
-npx --no-install tsx ./src/aws/cf/infra.ts --create --file ./tests/circuit.circom --script ./scripts/run-ceremony.sh
+npx --no-install tsx ./src/aws/infra.ts --create --file ./tests/circuit.circom --script ./scripts/run-ceremony.sh
 # > Creating bucket stack 'job-bucket-stack'...
-# > Uploading circuit.circom to s3://job-bucket-stack-jobbucket-ueyfllwekgqk/circuit.circom...
 # > upload: tests/circuit.circom to s3://job-bucket-stack-jobbucket-ueyfllwekgqk/circuit.circom
-# > Uploading script run-enclave-ceremony.ts to s3://job-bucket-stack-jobbucket-ueyfllwekgqk/run-enclave-ceremony.ts...
 # > upload: scripts/run-enclave-ceremony.ts to s3://job-bucket-stack-jobbucket-ueyfllwekgqk/run-enclave-ceremony.ts
 # > Deploying CloudFormation stack 'job-ec2-stack'. This may take a few minutes...
-# > Stack created.
+# > Cloud infrastructure deployed successfully.
 
 # Check stack status
-npx --no-install tsx ./src/aws/cf/infra.ts --check
+npx --no-install tsx ./src/aws/infra.ts --check
 # > Existing CloudFormation stacks:
 # >   job-ec2-stack: CREATE_COMPLETE
 # >   job-bucket-stack: CREATE_COMPLETE
 
 # Attach to the SSM session if you want to
-npx --no-install tsx ./src/aws/cf/infra.ts --session
+npx --no-install tsx ./src/aws/infra.ts --session
 # > Starting SSM session to instance i-07b1f611cbd62f867...
 # > Starting session with SessionId: iam-what-iam-q5xkjga39l3a7agb3cltdgf8oq
 # > sh-5.2$ 
@@ -65,8 +63,15 @@ ec2-user@ip-172-31-53-123 ~$ sudo su - ec2-user -c "tmux a"
 
 Back on your local machine:
 ```bash
+# Download any files your EC2 instance has copied to job/out/ on S3
+npx --no-install tsx ./src/aws/infra.ts --download ./out
+# > Copies everything in job/out/ on S3 to your local ./out directory
+```
+
+Back on your local machine:
+```bash
 # Delete stack when done
-npx --no-install tsx ./src/aws/cf/infra.ts --delete
+npx --no-install tsx ./src/aws/infra.ts --delete
 # > Delete EC2 stack 'job-ec2-stack' and bucket stack 'job-bucket-stack'? [y/N] y
 # > Deleting stack 'job-ec2-stack'...
 # > Stack 'job-ec2-stack' deleted.

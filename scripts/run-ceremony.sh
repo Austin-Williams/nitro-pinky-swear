@@ -2,8 +2,11 @@
 
 # This script is intended to be run on an ARM64/Graviton EC2 instance with AWS Nitro Enclaves enabled.
 
+# Create output directory if it doesn't exist
+mkdir -p "$HOME/job/out"
+
 # Set up logging to both console and file
-LOG_FILE="$HOME/run-ceremony-$(date +%Y%m%d-%H%M%S).log"
+LOG_FILE="$HOME/job/out/run-ceremony-$(date +%Y%m%d-%H%M%S).log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 echo "Logging all output to $LOG_FILE"
 
@@ -173,8 +176,6 @@ echo "Host ceremony script completed."
 
 # Move all artifacts from $HOME/nitro-pinky-swear/ceremony/artifacts/ to $HOME/job/out/
 echo "Moving ceremony artifacts to job output directory..."
-# Create output directory if it doesn't exist
-mkdir -p "$HOME/job/out"
 
 # Copy all artifacts to the output directory
 cp -r "$CEREMONY_DIR/artifacts/"* "$HOME/job/out/"
