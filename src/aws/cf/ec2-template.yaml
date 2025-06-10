@@ -122,6 +122,12 @@ Resources:
               echo "Starting UserData in tmux session..."
               DOWNLOAD_DIR="$HOME/job"
 
+              # Make Bucket, Files, Script available as environment variables 
+              # for the script we are about to run (run-ceremony.sh)
+              export Bucket="${Bucket}"
+              export Files="${Files}"
+              export Script="${Script}"
+
               if [ -n "${Files}" ]; then
                 for KEY in $(echo "${Files}" | tr ',' ' '); do
                   # Extract just the filename without the path
