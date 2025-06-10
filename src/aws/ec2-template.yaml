@@ -159,7 +159,7 @@ Resources:
                 
                 if [ $USER_SCRIPT_EXIT_CODE -eq 0 ]; then
                   echo "User script successful. Creating _FINISHED signal file in S3..."
-                  aws s3 cp --metadata-directive REPLACE --cache-control "no-cache,no-store,must-revalidate" --content-type "text/plain" /dev/null "s3://${Bucket}/job/out/_FINISHED"
+                  aws s3api put-object --bucket "${Bucket}" --key "job/out/_FINISHED"
                   if [ $? -eq 0 ]; then
                     echo "Successfully created _FINISHED signal file."
                   else
@@ -170,7 +170,7 @@ Resources:
                 fi
               else
                 echo "No script provided to run. Creating _FINISHED signal as UserData setup is complete."
-                aws s3 cp --metadata-directive REPLACE --cache-control "no-cache,no-store,must-revalidate" --content-type "text/plain" /dev/null "s3://${Bucket}/job/out/_FINISHED"
+                aws s3api put-object --bucket "${Bucket}" --key "job/out/_FINISHED"
                 if [ $? -eq 0 ]; then
                   echo "Successfully created _FINISHED signal file (no user script was specified)."
                 else

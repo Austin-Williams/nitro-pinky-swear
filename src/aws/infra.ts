@@ -55,7 +55,6 @@ import { handleDownload } from './infra/download'
 import { showHelp } from './infra/help'
 import { checkStacks } from './infra/check'
 import { sessionConnect } from './infra/session'
-import { getBucketName, waitForCompletion } from './infra/utils'
 
 async function run() {
 	const region = process.env.AWS_REGION || 'us-east-1'
@@ -161,7 +160,7 @@ async function run() {
 		// Pre-flight: ensure provided paths exist (before deploying any stacks)
 		verifyInputPaths(fileArgs, scriptPath)
 
-		await orchestrateCreate(cf, {
+		await orchestrateCreate(cf, s3, { // Pass s3 client and wait options
 			ec2Template,
 			bucketTemplate,
 			bucketStackName,
@@ -169,27 +168,9 @@ async function run() {
 			fileArgs,
 			scriptPath,
 			instanceType: instanceTypeEnv,
+			waitForCompletionSignal: waitFlag,
+			waitTimeoutMs: waitTimeoutMs,
 		})
-
-		if (waitFlag) {
-			console.log("\nCreate operation finished. Now waiting for ceremony completion signal...")
-			const bucketName = await getBucketName(cf, bucketStackName, ec2StackName)
-			if (bucketName) {
-				const signalKey = 'job/out/_FINISHED'
-				// Pass waitTimeoutMs to waitForCompletion. It will be undefined if not provided by user, 
-				// in which case waitForCompletion uses its default.
-				const success = await waitForCompletion(s3, bucketName, signalKey, undefined, waitTimeoutMs)
-				if (success) {
-					console.log("Ceremony completed successfully and artifacts should be available.")
-					// Optionally, could trigger download here automatically
-				} else {
-					console.log("Timed out waiting for ceremony completion signal, or an error occurred.")
-				}
-			} else {
-				console.error("Error: Could not determine S3 bucket name to wait for completion signal. Please check stack status.")
-			}
-		}
-		process.exit(0)
 	}
 
 	if (downloadFlag) {

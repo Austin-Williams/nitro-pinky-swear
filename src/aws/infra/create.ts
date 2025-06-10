@@ -1,8 +1,9 @@
-import { CloudFormationClient, CreateStackCommand, DescribeStacksCommand, waitUntilStackCreateComplete } from "@aws-sdk/client-cloudformation"
+import { CloudFormationClient, CreateStackCommand, waitUntilStackCreateComplete } from "@aws-sdk/client-cloudformation"
+import { S3Client } from "@aws-sdk/client-s3"
 import { spawn } from "child_process"
 import { existsSync } from "fs"
 import path from "path"
-
+import { getBucketName, waitForCompletion } from "./utils"
 
 interface OrchestrateCreateOpts {
 	ec2Template: string
@@ -12,6 +13,8 @@ interface OrchestrateCreateOpts {
 	fileArgs: string[]
 	scriptPath?: string
 	instanceType: string
+	waitForCompletionSignal?: boolean
+	waitTimeoutMs?: number
 }
 
 export function verifyInputPaths(fileArgs: string[], scriptPath?: string) {
@@ -53,35 +56,20 @@ async function createStack(cf: CloudFormationClient, templateBody: string, stack
 	}
 }
 
-export async function orchestrateCreate(cf: CloudFormationClient, opts: OrchestrateCreateOpts) {
-	const { bucketStackName, ec2StackName, bucketTemplate, ec2Template, fileArgs, scriptPath, instanceType } = opts
+export async function orchestrateCreate(cf: CloudFormationClient, s3: S3Client, opts: OrchestrateCreateOpts) {
+	const { ec2Template, bucketTemplate, bucketStackName, ec2StackName, fileArgs, scriptPath, instanceType, waitForCompletionSignal, waitTimeoutMs } = opts
 
-	// Step 1: create / ensure bucket stack exists
-	let bucketName: string | undefined
-	try {
-		const desc = await cf.send(new DescribeStacksCommand({ StackName: bucketStackName }))
-		bucketName = desc.Stacks?.[0]?.Outputs?.find(o => o.OutputKey === 'BucketName')?.OutputValue
-	} catch (err: any) {
-		if (err.name !== 'ValidationError') throw err
-	}
+	// 1. Create the S3 bucket stack (or use existing)
+	await createStack(cf, bucketTemplate, bucketStackName, "", [], undefined, instanceType) // Bucket name not needed here, files/script not for this stack
 
-	if (!bucketName) {
-		console.log(`Creating bucket stack '${bucketStackName}'...`)
-		await cf.send(new CreateStackCommand({
-			StackName: bucketStackName,
-			TemplateBody: bucketTemplate,
-		}))
-		await waitUntilStackCreateComplete({ client: cf, maxWaitTime: 300 }, { StackName: bucketStackName })
-		const desc = await cf.send(new DescribeStacksCommand({ StackName: bucketStackName }))
-		bucketName = desc.Stacks?.[0]?.Outputs?.find(o => o.OutputKey === 'BucketName')?.OutputValue
-	}
-
-	if (!bucketName) {
-		console.error('Could not determine bucket name from bucket stack.')
+	// 2. Get the actual bucket name from the S3 stack outputs
+	const actualBucketName = await getBucketName(cf, bucketStackName, ec2StackName) // ec2StackName not strictly needed here but getBucketName handles it
+	if (!actualBucketName) {
+		console.error(`Error: Could not determine bucket name from stack ${bucketStackName}. Cannot proceed with EC2 stack creation or file uploads.`)
 		process.exit(1)
 	}
 
-	// Step 2: upload user files (if any)
+	// 3. Upload files and script to the S3 bucket
 	if (fileArgs.length > 0 || scriptPath) {
 		for (const localPath of fileArgs) {
 			if (!existsSync(localPath)) {
@@ -90,7 +78,7 @@ export async function orchestrateCreate(cf: CloudFormationClient, opts: Orchestr
 			}
 			const key = path.basename(localPath)
 			await new Promise<void>((resolve, reject) => {
-				const up = spawn('aws', ['s3', 'cp', localPath, `s3://${bucketName}/${key}`], { stdio: 'inherit' })
+				const up = spawn('aws', ['s3', 'cp', localPath, `s3://${actualBucketName}/${key}`], { stdio: 'inherit' })
 				up.on('error', reject)
 				up.on('close', code => code === 0 ? resolve() : reject(new Error(`Upload failed with code ${code}`)))
 			})
@@ -103,16 +91,29 @@ export async function orchestrateCreate(cf: CloudFormationClient, opts: Orchestr
 			}
 			const scriptKey = path.basename(scriptPath)
 			await new Promise<void>((resolve, reject) => {
-				const up = spawn('aws', ['s3', 'cp', scriptPath, `s3://${bucketName}/${scriptKey}`], { stdio: 'inherit' })
+				const up = spawn('aws', ['s3', 'cp', scriptPath, `s3://${actualBucketName}/${scriptKey}`], { stdio: 'inherit' })
 				up.on('error', reject)
 				up.on('close', code => code === 0 ? resolve() : reject(new Error(`Upload failed with code ${code}`)))
 			})
 		}
 	}
 
-	// Step 3: create EC2 stack. Recreate if exists? We'll fail if already exists.
+	// 4. Create EC2 stack
 	const fileKeys = fileArgs.map(p => path.basename(p))
 	const scriptKeyName = scriptPath ? path.basename(scriptPath) : undefined
+	await createStack(cf, ec2Template, ec2StackName, actualBucketName, fileKeys, scriptKeyName, instanceType)
 
-	await createStack(cf, ec2Template, ec2StackName, bucketName, fileKeys, scriptKeyName, instanceType)
+	// 5. Optionally wait for job completion signal from S3
+	if (waitForCompletionSignal) {
+		console.log("\nEC2 stack creation finished. Now waiting for job completion signal from S3...")
+		const signalKey = 'job/out/_FINISHED'
+		const success = await waitForCompletion(s3, actualBucketName, signalKey, undefined, waitTimeoutMs)
+		if (success) {
+			console.log("Job completed successfully (detected _FINISHED signal) and artifacts should be available.")
+		} else {
+			console.log("Timed out waiting for job completion signal (_FINISHED), or an error occurred during polling.")
+		}
+	} else {
+		console.log("\nEC2 stack creation finished. Not waiting for job completion signal as --wait was not specified.")
+	}
 }
