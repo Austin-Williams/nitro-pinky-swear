@@ -55,6 +55,7 @@ import { handleDownload } from './infra/download'
 import { showHelp } from './infra/help'
 import { checkStacks } from './infra/check'
 import { sessionConnect } from './infra/session'
+import { getBucketName, waitForCompletion } from './infra/utils'
 
 async function run() {
 	const region = process.env.AWS_REGION || 'us-east-1'
@@ -73,6 +74,8 @@ async function run() {
 	const sessionFlag = process.argv.includes('--session')
 	const helpFlag = process.argv.includes('--help')
 	const downloadFlag = process.argv.includes('--download')
+	const waitFlag = process.argv.includes('--wait')
+	let waitTimeoutMs: number | undefined = undefined
 
 	// ----------------
 	// Argument parsing
@@ -87,6 +90,7 @@ async function run() {
 		'--files',
 		'--script',
 		'--download',
+		'--wait',
 	])
 
 	const fileArgs: string[] = []
@@ -166,16 +170,59 @@ async function run() {
 			scriptPath,
 			instanceType: instanceTypeEnv,
 		})
+
+		if (waitFlag) {
+			console.log("\nCreate operation finished. Now waiting for ceremony completion signal...")
+			const bucketName = await getBucketName(cf, bucketStackName, ec2StackName)
+			if (bucketName) {
+				const signalKey = 'job/out/_FINISHED'
+				// Pass waitTimeoutMs to waitForCompletion. It will be undefined if not provided by user, 
+				// in which case waitForCompletion uses its default.
+				const success = await waitForCompletion(s3, bucketName, signalKey, undefined, waitTimeoutMs)
+				if (success) {
+					console.log("Ceremony completed successfully and artifacts should be available.")
+					// Optionally, could trigger download here automatically
+				} else {
+					console.log("Timed out waiting for ceremony completion signal, or an error occurred.")
+				}
+			} else {
+				console.error("Error: Could not determine S3 bucket name to wait for completion signal. Please check stack status.")
+			}
+		}
+		process.exit(0)
 	}
 
 	if (downloadFlag) {
-		if (typeof downloadPath === 'string') {
+		const downloadPathIndex = process.argv.indexOf('--download') + 1
+		const downloadPath = process.argv[downloadPathIndex]
+		if (typeof downloadPath === 'string' && downloadPath.length > 0 && !downloadPath.startsWith('--')) {
 			await handleDownload(cf, s3, bucketStackName, ec2StackName, downloadPath)
 			process.exit(0)
 		} else {
-			console.error("Error: --download flag requires a local directory path argument, but it was not provided or is invalid.")
+			console.error("Error: --download flag requires a local directory path argument.")
 			showHelp() // showHelp calls process.exit(0)
 		}
+	}
+
+	// Argument parsing for --wait [timeoutMinutes]
+	if (waitFlag) {
+		const waitIndex = process.argv.indexOf('--wait')
+		const nextArg = process.argv[waitIndex + 1]
+		if (nextArg && !nextArg.startsWith('--')) {
+			const parsedTimeoutMinutes = parseInt(nextArg, 10)
+			if (!isNaN(parsedTimeoutMinutes) && parsedTimeoutMinutes > 0) {
+				waitTimeoutMs = parsedTimeoutMinutes * 60 * 1000 // Convert minutes to milliseconds
+			} else {
+				console.error(`Error: Invalid timeout value '${nextArg}' for --wait. Must be a positive number of minutes.`)
+				showHelp()
+			}
+		}
+		// If no value is provided after --wait, waitTimeoutMs remains undefined, and waitForCompletion will use its default.
+	}
+
+	if (waitFlag && !createFlag) {
+		console.error("Error: --wait flag can only be used with --create.")
+		showHelp()
 	}
 }
 

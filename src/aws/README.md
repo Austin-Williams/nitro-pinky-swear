@@ -32,7 +32,7 @@ npx --no-install tsx ./src/aws/infra.ts --check
 # Create stack
 # Any file you pass via --file will be uploaded to S3 and made available to the 
 # EC2 instance at `/var/lib/job/${filename}`
-# If you pass a script (.sh) via --script, it will be uploaded to S3 and executed on the EC2 instance as root on bootup
+# If you pass a script (.sh) via --script, it will be uploaded to S3 and executed on the EC2 instance as ec2-user on bootup
 npx --no-install tsx ./src/aws/infra.ts --create --file ./tests/circuit.circom --script ./scripts/run-ceremony.sh
 # > Creating bucket stack 'job-bucket-stack'...
 # > upload: tests/circuit.circom to s3://job-bucket-stack-jobbucket-ueyfllwekgqk/circuit.circom

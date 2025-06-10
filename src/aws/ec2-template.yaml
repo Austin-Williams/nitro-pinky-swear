@@ -110,7 +110,7 @@ Resources:
               SETUP_DIR="$EC2_USER_HOME/setup"
               JOB_DIR="$EC2_USER_HOME/job"
 
-              mkdir -p "$SETUP_DIR" "$JOB_DIR"
+              mkdir -p "$SETUP_DIR" "$JOB_DIR" "$JOB_DIR/out"
               chown -R ec2-user:ec2-user "$EC2_USER_HOME"
 
               # Write the helper script inside $SETUP_DIR so it is kept
@@ -149,10 +149,36 @@ Resources:
                   sleep 5
                 done
                 chmod +x "$DOWNLOAD_DIR/$SCRIPT_FILENAME"
-                bash "$DOWNLOAD_DIR/$SCRIPT_FILENAME"
-                echo "Ran script $DOWNLOAD_DIR/$SCRIPT_FILENAME"
+                echo "Running script $DOWNLOAD_DIR/$SCRIPT_FILENAME..."
+                
+                # Run the user's script and capture its exit code immediately
+                "$DOWNLOAD_DIR/$SCRIPT_FILENAME"
+                USER_SCRIPT_EXIT_CODE=$?
+                
+                echo "User script $SCRIPT_FILENAME finished with exit code $USER_SCRIPT_EXIT_CODE."
+                
+                if [ $USER_SCRIPT_EXIT_CODE -eq 0 ]; then
+                  echo "User script successful. Creating _FINISHED signal file in S3..."
+                  aws s3 cp --metadata-directive REPLACE --cache-control "no-cache,no-store,must-revalidate" --content-type "text/plain" /dev/null "s3://${Bucket}/job/out/_FINISHED"
+                  if [ $? -eq 0 ]; then
+                    echo "Successfully created _FINISHED signal file."
+                  else
+                    echo "ERROR: Failed to create _FINISHED signal file in S3. User script exit code was $USER_SCRIPT_EXIT_CODE." >&2
+                  fi
+                else
+                  echo "User script $SCRIPT_FILENAME failed with exit code $USER_SCRIPT_EXIT_CODE. Not creating _FINISHED signal file." >&2
+                fi
+              else
+                echo "No script provided to run. Creating _FINISHED signal as UserData setup is complete."
+                aws s3 cp --metadata-directive REPLACE --cache-control "no-cache,no-store,must-revalidate" --content-type "text/plain" /dev/null "s3://${Bucket}/job/out/_FINISHED"
+                if [ $? -eq 0 ]; then
+                  echo "Successfully created _FINISHED signal file (no user script was specified)."
+                else
+                  echo "ERROR: Failed to create _FINISHED signal file (no user script was specified)." >&2
+                fi
               fi
-              echo "UserData tasks complete."
+
+              echo "run_userdata.sh finished."
               EOF_SCRIPT
 
               # ----------------------------------------------------------

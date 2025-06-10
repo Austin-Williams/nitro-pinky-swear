@@ -2,9 +2,6 @@
 
 # This script is intended to be run on an ARM64/Graviton EC2 instance with AWS Nitro Enclaves enabled.
 
-# Create output directory if it doesn't exist
-mkdir -p "$HOME/job/out"
-
 # Set up logging to both console and file
 LOG_FILE="$HOME/job/out/run-ceremony-$(date +%Y%m%d-%H%M%S).log"
 exec > >(tee -a "$LOG_FILE") 2>&1
@@ -187,8 +184,7 @@ if [ $? -eq 0 ]; then
   echo "Successfully synced artifacts to S3."
 else
   echo "ERROR: Failed to sync artifacts to S3. Check logs and IAM permissions for the EC2 instance role." >&2
-  # Depending on requirements, you might want to exit with an error here:
-  # exit 1 
+  exit 1 # Ensure script exits with an error if sync fails
 fi
 
 echo "Script finished."

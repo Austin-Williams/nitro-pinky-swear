@@ -3,6 +3,7 @@ export function showHelp() {
 		`  --create                Create the CloudFormation stack\n` +
 		`    --file[s] <path>      Upload a file to the instance (repeatable, only with --create)\n` +
 		`    --script <path>       Run a script on the instance (only with --create)\n` +
+		`    --wait [timeout_minutes] After creating, wait for completion signal (optional timeout in minutes)\n` +
 		`  --check                 List existing stacks\n` +
 		`  --delete                Delete the stack\n` +
 		`  --session               Open an SSM session to the instance\n` +

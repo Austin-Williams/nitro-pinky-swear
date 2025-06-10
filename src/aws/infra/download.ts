@@ -1,43 +1,21 @@
-import { CloudFormationClient, DescribeStacksCommand } from '@aws-sdk/client-cloudformation'
+import * as path from 'path'
+import { CloudFormationClient } from '@aws-sdk/client-cloudformation'
 import { S3Client, ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3'
 import { Readable } from 'stream'
 import { writeFile, mkdir } from 'fs/promises'
-import * as path from 'path'
+
 import { existsSync } from 'fs'
+import { getBucketName } from './utils'
 
 export async function handleDownload(cf: CloudFormationClient, s3: S3Client, bucketStackName: string, ec2StackName: string, localPath: string) {
 	console.log(`Attempting to download artifacts to ${localPath}...`)
 
-	let bucketName: string | undefined
 	try {
-		// Try to get BucketName from the bucket stack's outputs first
-		try {
-			const bucketStackDescription = await cf.send(new DescribeStacksCommand({ StackName: bucketStackName }))
-			if (bucketStackDescription.Stacks && bucketStackDescription.Stacks.length > 0 && bucketStackDescription.Stacks[0].Outputs) {
-				bucketName = bucketStackDescription.Stacks[0].Outputs.find(o => o.OutputKey === 'BucketName')?.OutputValue
-			}
-		} catch (e: any) {
-			if (e.name !== 'ValidationError') { // ValidationError often means stack not found
-				console.warn(`Warning: Could not describe bucket stack '${bucketStackName}' or find 'BucketName' output: ${e.message}. Will try EC2 stack parameters.`)
-			} else {
-				console.log(`Bucket stack '${bucketStackName}' not found. Trying EC2 stack for bucket name.`)
-			}
-		}
-
-		// If not found, try to get BucketName from EC2 stack's parameters
-		if (!bucketName) {
-			try {
-				const ec2StackDescription = await cf.send(new DescribeStacksCommand({ StackName: ec2StackName }))
-				if (ec2StackDescription.Stacks && ec2StackDescription.Stacks.length > 0 && ec2StackDescription.Stacks[0].Parameters) {
-					bucketName = ec2StackDescription.Stacks[0].Parameters.find(p => p.ParameterKey === 'BucketName')?.ParameterValue
-				}
-			} catch (e: any) {
-				console.warn(`Warning: Could not describe EC2 stack '${ec2StackName}' or find 'BucketName' parameter: ${e.message}.`)
-			}
-		}
+		const bucketName = await getBucketName(cf, bucketStackName, ec2StackName)
 
 		if (!bucketName) {
 			console.error(`Error: Could not determine S3 bucket name from CloudFormation outputs of '${bucketStackName}' or parameters of '${ec2StackName}'. Cannot download artifacts.`)
+			console.log(`Please ensure either the bucket stack ('${bucketStackName}') or the EC2 stack ('${ec2StackName}') exists and has the 'BucketName' output or parameter, respectively.`)
 			process.exit(1)
 		}
 		console.log(`Using S3 bucket: ${bucketName}`)
@@ -75,7 +53,7 @@ export async function handleDownload(cf: CloudFormationClient, s3: S3Client, buc
 			}
 
 			for (const item of listResponse.Contents) {
-				if (!item.Key || item.Key === s3Prefix || item.Key.endsWith('/')) { // Skip prefix itself or "folders"
+				if (!item.Key || item.Key === s3Prefix || item.Key.endsWith('/') || item.Key.endsWith('_FINISHED')) { // Skip prefix itself or "folders"
 					continue
 				}
 
