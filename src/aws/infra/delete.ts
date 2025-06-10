@@ -2,7 +2,7 @@ import { CloudFormationClient, DeleteStackCommand, DescribeStacksCommand, waitUn
 import { spawn } from "child_process"
 import * as readline from 'readline'
 
-export async function deleteStacks(cf: CloudFormationClient, bucketStackName: string, ec2StackName: string) {
+export async function deleteStacks(cf: CloudFormationClient, bucketStackName: string, ec2StackName: string, yesFlag?: boolean) {
 	// Describe both stacks to determine existence
 	let ec2Exists = false
 	let bucketExists = false
@@ -20,11 +20,15 @@ export async function deleteStacks(cf: CloudFormationClient, bucketStackName: st
 		return
 	}
 
-	const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
-	const answer = await new Promise<string>(res => rl.question(`Delete EC2 stack '${ec2StackName}'${bucketExists ? ` and bucket stack '${bucketStackName}'` : ''}? [y/N] `, ans => { rl.close(); res(ans) }))
-	if (answer.toLowerCase() !== 'y') {
-		console.log('Aborted delete.')
-		return
+	if (!yesFlag) {
+		const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
+		const answer = await new Promise<string>(res => rl.question(`Delete EC2 stack '${ec2StackName}'${bucketExists ? ` and bucket stack '${bucketStackName}'` : ''}? [y/N] `, ans => { rl.close(); res(ans) }))
+		if (answer.toLowerCase() !== 'y') {
+			console.log('Aborted delete.')
+			return
+		}
+	} else {
+		console.log("Proceeding with deletion due to --yes flag.")
 	}
 
 	// First delete EC2 stack if present (so bucket can be emptied safely afterward)

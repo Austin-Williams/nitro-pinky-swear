@@ -49,7 +49,7 @@ export async function getBucketName(
 }
 
 const DEFAULT_POLL_INTERVAL_MS = 30000 // 30 seconds
-const DEFAULT_POLL_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
+const DEFAULT_POLL_TIMEOUT_MS = 60 * 60 * 1000 // 60 minutes
 
 /**
  * Waits for a signal file to appear in S3.
@@ -68,7 +68,7 @@ export async function waitForCompletion(
 	timeoutMs: number = DEFAULT_POLL_TIMEOUT_MS
 ): Promise<boolean> {
 	const startTime = Date.now()
-	console.log(`Waiting for signal file s3://${bucketName}/${signalKey} ... (timeout: ${timeoutMs / 1000 / 60} minutes)`)
+	console.log(`Polling for signal file s3://${bucketName}/${signalKey} ... (timeout: ${timeoutMs / 1000 / 60} minutes)`)
 
 	while (Date.now() - startTime < timeoutMs) {
 		try {

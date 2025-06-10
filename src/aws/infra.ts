@@ -74,6 +74,8 @@ async function run() {
 	const helpFlag = process.argv.includes('--help')
 	const downloadFlag = process.argv.includes('--download')
 	const waitFlag = process.argv.includes('--wait')
+	const yesFlag = process.argv.includes('--yes')
+	const runJobFlag = process.argv.includes('--run-job')
 	let waitTimeoutMs: number | undefined = undefined
 
 	// ----------------
@@ -90,11 +92,15 @@ async function run() {
 		'--script',
 		'--download',
 		'--wait',
+		'--yes',
+		'--run-job',
+		'--output',
 	])
 
 	const fileArgs: string[] = []
 	let scriptPath: string | undefined
-	let downloadPath: string | undefined
+	let downloadPath: string = 'out/' // For standalone --download, default to 'out/'
+	let outputPathForRunJob: string = 'out/' // For --run-job's download step, default to 'out/'
 
 	const argv = process.argv.slice(2)
 	for (let i = 0; i < argv.length; i++) {
@@ -121,6 +127,14 @@ async function run() {
 				}
 				downloadPath = argv[i + 1]
 				i++
+			} else if (token === '--output') {
+				const outputIndex = i // Current index is where --output is found
+				if (argv.length <= outputIndex + 1 || (argv[outputIndex + 1] && argv[outputIndex + 1].startsWith('--'))) {
+					// --output was given but no value, or next arg is another flag. Default 'out/' is already set for outputPathForRunJob.
+				} else {
+					outputPathForRunJob = argv[outputIndex + 1]
+					i++
+				}
 			}
 			// other flags don't need value processing here
 		} else if (token.startsWith('-')) {
@@ -134,13 +148,18 @@ async function run() {
 	}
 
 	// Mutual exclusivity
-	const activeFlags = [createFlag, checkFlag, deleteFlag, sessionFlag, downloadFlag].filter(f => f).length
+	const activeFlags = [createFlag, checkFlag, deleteFlag, sessionFlag, downloadFlag, runJobFlag].filter(f => f).length
 	if (activeFlags > 1) {
-		console.error("Error: flags --create, --check, --delete, --session, and --download are mutually exclusive. Please specify only one.")
+		console.error("Error: flags --create, --check, --delete, --session, --download, and --run-job are mutually exclusive. Please specify only one.")
 		process.exit(1)
 	}
 
 	if (helpFlag || (activeFlags === 0 && !argv.some(arg => allowedFlags.has(arg) && arg !== '--help'))) {
+		showHelp()
+	}
+
+	if (yesFlag && !deleteFlag) {
+		console.error("Error: --yes flag can only be used with --delete.")
 		showHelp()
 	}
 
@@ -153,7 +172,14 @@ async function run() {
 	}
 
 	if (deleteFlag) {
-		await deleteStacks(cf, bucketStackName, ec2StackName)
+		await deleteStacks(cf, bucketStackName, ec2StackName, yesFlag)
+	}
+
+	if (runJobFlag) {
+		if (!scriptPath) {
+			console.error("Error: --script <path> is required when using --run-job.")
+			showHelp()
+		}
 	}
 
 	if (createFlag) {
@@ -173,16 +199,50 @@ async function run() {
 		})
 	}
 
+	if (runJobFlag) {
+		// Script and file args already validated above for runJobFlag
+		console.log("Starting job run: This will create infrastructure, execute the script, wait for completion, download artifacts, and then delete the infrastructure.")
+		try {
+			console.log("Step 1/3: Creating infrastructure and waiting for job completion...")
+
+			// Pre-flight: ensure provided paths exist (before deploying any stacks)
+			verifyInputPaths(fileArgs, scriptPath)
+
+			await orchestrateCreate(cf, s3, { // Pass s3 client and wait options
+				ec2Template,
+				bucketTemplate,
+				bucketStackName,
+				ec2StackName,
+				fileArgs,
+				scriptPath,
+				instanceType: instanceTypeEnv,
+				waitForCompletionSignal: true,
+				waitTimeoutMs: waitTimeoutMs,
+			})
+
+			console.log("Step 2/3: Downloading artifacts...")
+			await handleDownload(cf, s3, bucketStackName, ec2StackName, outputPathForRunJob)
+
+			console.log("Step 3/3: Deleting infrastructure...")
+			await deleteStacks(cf, bucketStackName, ec2StackName, true)
+		} catch (e) {
+			console.error("Error during job run:", e)
+			process.exit(1)
+		}
+	}
+
 	if (downloadFlag) {
 		const downloadPathIndex = process.argv.indexOf('--download') + 1
-		const downloadPath = process.argv[downloadPathIndex]
-		if (typeof downloadPath === 'string' && downloadPath.length > 0 && !downloadPath.startsWith('--')) {
-			await handleDownload(cf, s3, bucketStackName, ec2StackName, downloadPath)
-			process.exit(0)
-		} else {
-			console.error("Error: --download flag requires a local directory path argument.")
-			showHelp() // showHelp calls process.exit(0)
+		let downloadPath = 'out/' // Default path
+
+		if (process.argv.length > downloadPathIndex &&
+			typeof process.argv[downloadPathIndex] === 'string' &&
+			!process.argv[downloadPathIndex].startsWith('--')) {
+			downloadPath = process.argv[downloadPathIndex]
 		}
+
+		await handleDownload(cf, s3, bucketStackName, ec2StackName, downloadPath)
+		process.exit(0)
 	}
 
 	// Argument parsing for --wait [timeoutMinutes]
@@ -201,8 +261,8 @@ async function run() {
 		// If no value is provided after --wait, waitTimeoutMs remains undefined, and waitForCompletion will use its default.
 	}
 
-	if (waitFlag && !createFlag) {
-		console.error("Error: --wait flag can only be used with --create.")
+	if (waitFlag && !createFlag && !runJobFlag) {
+		console.error("Error: --wait flag can only be used with --create or --run-job.")
 		showHelp()
 	}
 }

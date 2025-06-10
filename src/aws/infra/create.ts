@@ -30,13 +30,17 @@ export function verifyInputPaths(fileArgs: string[], scriptPath?: string) {
 	}
 }
 
-async function createStack(cf: CloudFormationClient, templateBody: string, stackName: string, bucketName: string, inputFiles: string[], scriptKey: string | undefined, instanceType: string) {
+async function createStack(cf: CloudFormationClient, templateBody: string, stackName: string, bucketName: string, inputFiles: string[], scriptKey: string | undefined, instanceType?: string) {
 	try {
 		console.log(`Deploying CloudFormation stack '${stackName}'. This may take a few minutes...`)
 		const cfnParams: any[] = [
 			{ ParameterKey: 'BucketName', ParameterValue: bucketName },
-			{ ParameterKey: 'InstanceType', ParameterValue: instanceType },
 		]
+
+		if (instanceType) {
+			cfnParams.push({ ParameterKey: 'InstanceType', ParameterValue: instanceType })
+		}
+
 		if (inputFiles.length > 0) {
 			cfnParams.push({ ParameterKey: 'InputFiles', ParameterValue: inputFiles.join(',') })
 		}
@@ -60,10 +64,10 @@ export async function orchestrateCreate(cf: CloudFormationClient, s3: S3Client, 
 	const { ec2Template, bucketTemplate, bucketStackName, ec2StackName, fileArgs, scriptPath, instanceType, waitForCompletionSignal, waitTimeoutMs } = opts
 
 	// 1. Create the S3 bucket stack (or use existing)
-	await createStack(cf, bucketTemplate, bucketStackName, "", [], undefined, instanceType) // Bucket name not needed here, files/script not for this stack
+	await createStack(cf, bucketTemplate, bucketStackName, "", [], undefined, undefined)
 
 	// 2. Get the actual bucket name from the S3 stack outputs
-	const actualBucketName = await getBucketName(cf, bucketStackName, ec2StackName) // ec2StackName not strictly needed here but getBucketName handles it
+	const actualBucketName = await getBucketName(cf, bucketStackName, ec2StackName)
 	if (!actualBucketName) {
 		console.error(`Error: Could not determine bucket name from stack ${bucketStackName}. Cannot proceed with EC2 stack creation or file uploads.`)
 		process.exit(1)
@@ -105,7 +109,7 @@ export async function orchestrateCreate(cf: CloudFormationClient, s3: S3Client, 
 
 	// 5. Optionally wait for job completion signal from S3
 	if (waitForCompletionSignal) {
-		console.log("\nEC2 stack creation finished. Now waiting for job completion signal from S3...")
+		console.log("\nJob running on EC2 instance. Waiting for it to finish...")
 		const signalKey = 'job/out/_FINISHED'
 		const success = await waitForCompletion(s3, actualBucketName, signalKey, undefined, waitTimeoutMs)
 		if (success) {
