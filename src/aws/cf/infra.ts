@@ -47,15 +47,19 @@
  */
 import 'dotenv/config'
 import { CloudFormationClient, CreateStackCommand, DeleteStackCommand, DescribeStacksCommand, waitUntilStackCreateComplete, waitUntilStackDeleteComplete } from '@aws-sdk/client-cloudformation'
+import { S3Client, ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3'
+import { Readable } from 'stream'
+import { writeFile, mkdir } from 'fs/promises'
 import { readFileSync, existsSync } from 'fs'
 import * as readline from 'readline'
 import { spawn } from 'child_process'
-import path from 'path'
+import * as path from 'path'
 
 async function run() {
 	const region = process.env.AWS_REGION || 'us-east-1'
 	const instanceTypeEnv = process.env.AWS_INSTANCE_TYPE || 'm8g.xlarge'
 	const cf = new CloudFormationClient({ region })
+	const s3 = new S3Client({ region })
 	const ec2Template = readFileSync(new URL('./ec2-template.yaml', import.meta.url), 'utf8')
 	const bucketTemplate = readFileSync(new URL('./bucket-template.yaml', import.meta.url), 'utf8')
 
@@ -67,6 +71,7 @@ async function run() {
 	const deleteFlag = process.argv.includes('--delete')
 	const sessionFlag = process.argv.includes('--session')
 	const helpFlag = process.argv.includes('--help')
+	const downloadFlag = process.argv.includes('--download')
 
 	// ------------------------------------------------------------------
 	// Argument parsing
@@ -80,10 +85,12 @@ async function run() {
 		'--file',
 		'--files',
 		'--script',
+		'--download',
 	])
 
 	const fileArgs: string[] = []
 	let scriptPath: string | undefined
+	let downloadPath: string | undefined
 
 	const argv = process.argv.slice(2)
 	for (let i = 0; i < argv.length; i++) {
@@ -103,6 +110,13 @@ async function run() {
 				}
 				scriptPath = argv[i + 1]
 				i++
+			} else if (token === '--download') {
+				if (!argv[i + 1] || argv[i + 1].startsWith('--')) {
+					console.error('Error: --download flag expects a local directory path argument.')
+					process.exit(1)
+				}
+				downloadPath = argv[i + 1]
+				i++
 			}
 			// other flags don't need value processing here
 		} else if (token.startsWith('-')) {
@@ -116,13 +130,13 @@ async function run() {
 	}
 
 	// Mutual exclusivity
-	const activeFlags = [createFlag, checkFlag, deleteFlag, sessionFlag].filter(f => f).length
+	const activeFlags = [createFlag, checkFlag, deleteFlag, sessionFlag, downloadFlag].filter(f => f).length
 	if (activeFlags > 1) {
-		console.error("Error: flags --create, --check, --delete, and --session are mutually exclusive. Please specify only one.")
+		console.error("Error: flags --create, --check, --delete, --session, and --download are mutually exclusive. Please specify only one.")
 		process.exit(1)
 	}
 
-	if (helpFlag || activeFlags === 0) {
+	if (helpFlag || (activeFlags === 0 && !argv.some(arg => allowedFlags.has(arg) && arg !== '--help'))) {
 		showHelp()
 	}
 
@@ -151,6 +165,23 @@ async function run() {
 			scriptPath,
 			instanceType: instanceTypeEnv,
 		})
+	}
+
+	if (downloadFlag) {
+		// The argument parsing logic for --download ensures that if downloadFlag is true,
+		// downloadPath is assigned a string value, or the process exits.
+		// This explicit typeof check satisfies TypeScript's strict null/undefined checks,
+		// as downloadPath is initially typed as string | undefined.
+		if (typeof downloadPath === 'string') {
+			await handleDownload(cf, s3, bucketStackName, ec2StackName, downloadPath)
+			process.exit(0) // Exit after download completes
+		} else {
+			// This block should theoretically not be reached if downloadFlag is true
+			// due to the preceding argument parsing logic which would have exited.
+			// However, it makes the control flow explicit for TypeScript and handles any unexpected state.
+			console.error("Error: --download flag requires a local directory path argument, but it was not provided or is invalid.")
+			showHelp() // showHelp calls process.exit(0)
+		}
 	}
 }
 
@@ -245,6 +276,7 @@ function showHelp() {
 		`  --check                 List existing stacks\n` +
 		`  --delete                Delete the stack\n` +
 		`  --session               Open an SSM session to the instance\n` +
+		`  --download <path>       Download artifacts from S3 job/out/ to local path\n` +
 		`  --help                  Show this help`)
 	process.exit(0)
 }
@@ -394,6 +426,129 @@ async function sessionConnect(cf: CloudFormationClient, stackName: string) {
 		s.on('exit', (code) => process.exit(code ?? 0))
 	} catch (error) {
 		console.error('Error starting session:', error)
+		process.exit(1)
+	}
+}
+
+async function handleDownload(cf: CloudFormationClient, s3: S3Client, bucketStackName: string, ec2StackName: string, localPath: string) {
+	console.log(`Attempting to download artifacts to ${localPath}...`)
+
+	let bucketName: string | undefined
+	try {
+		// Try to get BucketName from the bucket stack's outputs first
+		try {
+			const bucketStackDescription = await cf.send(new DescribeStacksCommand({ StackName: bucketStackName }))
+			if (bucketStackDescription.Stacks && bucketStackDescription.Stacks.length > 0 && bucketStackDescription.Stacks[0].Outputs) {
+				bucketName = bucketStackDescription.Stacks[0].Outputs.find(o => o.OutputKey === 'BucketName')?.OutputValue
+			}
+		} catch (e: any) {
+			if (e.name !== 'ValidationError') { // ValidationError often means stack not found
+				console.warn(`Warning: Could not describe bucket stack '${bucketStackName}' or find 'BucketName' output: ${e.message}. Will try EC2 stack parameters.`)
+			} else {
+				console.log(`Bucket stack '${bucketStackName}' not found. Trying EC2 stack for bucket name.`)
+			}
+		}
+
+		// If not found, try to get BucketName from EC2 stack's parameters
+		if (!bucketName) {
+			try {
+				const ec2StackDescription = await cf.send(new DescribeStacksCommand({ StackName: ec2StackName }))
+				if (ec2StackDescription.Stacks && ec2StackDescription.Stacks.length > 0 && ec2StackDescription.Stacks[0].Parameters) {
+					bucketName = ec2StackDescription.Stacks[0].Parameters.find(p => p.ParameterKey === 'BucketName')?.ParameterValue
+				}
+			} catch (e: any) {
+				console.warn(`Warning: Could not describe EC2 stack '${ec2StackName}' or find 'BucketName' parameter: ${e.message}.`)
+			}
+		}
+
+		if (!bucketName) {
+			console.error(`Error: Could not determine S3 bucket name from CloudFormation outputs of '${bucketStackName}' or parameters of '${ec2StackName}'. Cannot download artifacts.`)
+			process.exit(1)
+		}
+		console.log(`Using S3 bucket: ${bucketName}`)
+
+		// Ensure local directory exists
+		try {
+			await mkdir(localPath, { recursive: true })
+		} catch (e: any) {
+			if (e.code !== 'EEXIST') { // Ignore if directory already exists
+				console.error(`Error creating local directory ${localPath}: ${e.message}`)
+				process.exit(1)
+			}
+		}
+
+		const s3Prefix = 'job/out/'
+		console.log(`Listing objects in s3://${bucketName}/${s3Prefix}`)
+
+		let continuationToken: string | undefined
+		let filesDownloaded = 0
+		let totalListedObjects = 0
+		do {
+			const listResponse = await s3.send(new ListObjectsV2Command({
+				Bucket: bucketName,
+				Prefix: s3Prefix,
+				ContinuationToken: continuationToken,
+			}))
+
+			totalListedObjects += listResponse.KeyCount || 0
+
+			if (!listResponse.Contents || listResponse.Contents.length === 0) {
+				if (!continuationToken && totalListedObjects === 0) {
+					console.log(`No objects found in s3://${bucketName}/${s3Prefix}`)
+				}
+				break
+			}
+
+			for (const item of listResponse.Contents) {
+				if (!item.Key || item.Key === s3Prefix || item.Key.endsWith('/')) { // Skip prefix itself or "folders"
+					continue
+				}
+
+				const relativeKey = item.Key.substring(s3Prefix.length)
+				const localFilePath = path.join(localPath, relativeKey)
+				const localFileDir = path.dirname(localFilePath)
+
+				if (localFileDir !== localPath && !existsSync(localFileDir)) {
+					await mkdir(localFileDir, { recursive: true })
+				}
+
+				console.log(`Downloading s3://${bucketName}/${item.Key} to ${localFilePath}...`)
+				try {
+					const getObjectResponse = await s3.send(new GetObjectCommand({
+						Bucket: bucketName,
+						Key: item.Key,
+					}))
+
+					if (getObjectResponse.Body instanceof Readable) {
+						const chunks: Buffer[] = []
+						for await (const chunk of getObjectResponse.Body) {
+							chunks.push(chunk as Buffer)
+						}
+						await writeFile(localFilePath, Buffer.concat(chunks))
+						filesDownloaded++
+					} else {
+						console.warn(`Warning: Could not read body of s3://${bucketName}/${item.Key}. Skipping.`)
+					}
+				} catch (e: any) {
+					console.error(`Error downloading ${item.Key}: ${e.message}`)
+				}
+			}
+			continuationToken = listResponse.NextContinuationToken
+		} while (continuationToken)
+
+		if (filesDownloaded > 0) {
+			console.log(`\nSuccessfully downloaded ${filesDownloaded} file(s) to ${localPath}.`)
+		} else if (totalListedObjects > 0 && filesDownloaded === 0) {
+			console.log(`\nNo files were downloaded. ${totalListedObjects} object(s) found in s3://${bucketName}/${s3Prefix} were not downloaded (e.g. already exist, skipped, or errors).`)
+		} else if (totalListedObjects === 0 && filesDownloaded === 0) {
+			// "No objects found..." message is handled earlier if totalListedObjects is 0 from the start.
+		}
+
+	} catch (err: any) {
+		console.error(`Failed to download artifacts: ${err.message}`)
+		if (err.stack) {
+			console.error(err.stack)
+		}
 		process.exit(1)
 	}
 }
