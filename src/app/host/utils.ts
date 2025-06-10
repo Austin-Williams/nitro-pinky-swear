@@ -168,6 +168,7 @@ export function ensureResourcesAllocated(pathToCeremonyDirectory: string): void 
 	// We do this by checking if server-constants.ts exists in the specified ceremony directory.
 	const serverConstantsFileName = 'server-constants.ts'
 	const serverConstantsPath = path.join(pathToCeremonyDirectory, serverConstantsFileName)
+	console.log(`Checking for server-constants.ts at: ${serverConstantsPath}`)
 
 	if (!fsSync.existsSync(serverConstantsPath)) {
 		console.log('Resources have not yet been allocated for enclave. Allocating resources now.')

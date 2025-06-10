@@ -66,36 +66,7 @@ echo "Development tools installed."
 # Install AWS Nitro CLI tools
 echo "Installing AWS Nitro CLI tools..."
 sudo dnf install -y aws-nitro-enclaves-cli aws-nitro-enclaves-cli-devel
-sudo systemctl start nitro-enclaves-allocator.service
-echo "Pausing for 4 seconds..."
-sleep 4
-sudo systemctl enable nitro-enclaves-allocator.service
-echo "Pausing for 4 seconds..."
-sleep 4
 echo "AWS Nitro CLI tools installed."
-
-# Verify that we can run nitro-cli commands
-echo "Verifying nitro-cli functionality with 'command -v nitro-cli'..."
-if ! command -v nitro-cli &> /dev/null; then
-  echo "Error: nitro-cli command not found. Installation may have failed." >&2
-  exit 1
-fi
-
-# Try to run a simple nitro-cli command
-echo "Verifying nitro-cli functionality with 'nitro-cli --version'..."
-if ! nitro-cli --version &> /dev/null; then
-  echo "Error: Unable to execute nitro-cli --version. Installation may be incomplete." >&2
-  exit 1
-fi
-
-# Check if we can list enclaves
-echo "Verifying nitro-cli functionality with 'sudo nitro-cli describe-enclaves'..."	
-if ! sudo nitro-cli describe-enclaves &> /dev/null; then
-  echo "Error: Unable to execute nitro-cli describe-enclaves. Nitro Enclaves service may not be running properly." >&2
-  exit 1
-fi
-
-echo "nitro-cli verification successful."
 
 # Install Docker using the Amazon Linux 2023 method
 echo "Installing Docker..."
@@ -193,41 +164,18 @@ EIF_PATH="$CEREMONY_DIR/enclave.eif"
 if [ ! -f "$EIF_PATH" ]; then
     echo "Error: EIF file '$EIF_PATH' not found after build. Exiting." >&2
     exit 1
-fi
+fi  
 echo "EIF build completed."
 
 npx tsx 'src/app/host/run-host-ceremony.ts' "$CEREMONY_DIR/circuit.circom"
 
 echo "Host ceremony script completed."
 
-# Upload artifacts to S3 bucket
-echo "Uploading ceremony artifacts to S3..."
-# Get the bucket name from the instance metadata
-BUCKET_NAME=$(aws cloudformation describe-stacks --stack-name job-bucket-stack --query "Stacks[0].Outputs[?OutputKey=='BucketName'].OutputValue" --output text)
+# Move all artifacts from $HOME/nitro-pinky-swear/ceremony/artifacts/ to $HOME/job/out/
+echo "Moving ceremony artifacts to job output directory..."
+# Create output directory if it doesn't exist
+mkdir -p "$HOME/job/out"
 
-if [ -z "$BUCKET_NAME" ]; then
-    echo "Error: Could not determine S3 bucket name. Artifacts will not be uploaded." >&2
-else
-    # Create a manifest file with metadata
-    MANIFEST_FILE="$CEREMONY_DIR/artifacts/manifest.json"
-    cat > "$MANIFEST_FILE" << EOF
-{
-  "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-  "instanceId": "$(curl -s http://169.254.169.254/latest/meta-data/instance-id)",
-  "instanceType": "$(curl -s http://169.254.169.254/latest/meta-data/instance-type)",
-  "artifacts": [
-    $(find "$CEREMONY_DIR/artifacts" -type f -not -name "manifest.json" | sort | sed 's/.*/"&",/' | sed '$s/,$//')
-  ]
-}
-EOF
+# Copy all artifacts to the output directory
+cp -r "$CEREMONY_DIR/artifacts/"* "$HOME/job/out/"
 
-    # Upload all artifacts to S3
-    aws s3 cp "$CEREMONY_DIR/artifacts/" "s3://$BUCKET_NAME/artifacts/" --recursive
-
-    # Upload a completion marker to signal that the ceremony is complete
-    echo "Ceremony completed at $(date -u +"%Y-%m-%dT%H:%M:%SZ")" > "$CEREMONY_DIR/completion.marker"
-    aws s3 cp "$CEREMONY_DIR/completion.marker" "s3://$BUCKET_NAME/completion.marker"
-
-    echo "Artifacts uploaded to s3://$BUCKET_NAME/artifacts/"
-    echo "Completion marker uploaded to s3://$BUCKET_NAME/completion.marker"
-fi
