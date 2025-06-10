@@ -160,12 +160,13 @@ async function run() {
 	})
 
 	await new Promise((resolve) => setTimeout(resolve, 2 * 1000))
-	console.log('**************************************************************************')
+	console.log('************************************************************************************')
 	console.log('[Host] Host side of ceremony completed successfully.')
 	console.log('[Host] All ceremony artifacts have been saved to the "ceremony/artifacts" directory.')
-	console.log('**************************************************************************\n')
+	console.log('************************************************************************************\n')
 
 	await new Promise((resolve) => setTimeout(resolve, 4 * 1000))
+	process.exit(0)
 }
 
 run().catch((e) => { console.error(e); process.exit(1) })

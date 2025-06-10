@@ -246,6 +246,7 @@ async function run() {
 	console.log('********************************************************************************************\n')
 
 	await new Promise((resolve) => setTimeout(resolve, 2 * 1000))
+	process.exit(0)
 }
 
 run().catch((e) => { console.error(e); process.exit(1) })

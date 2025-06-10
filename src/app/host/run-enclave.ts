@@ -69,7 +69,7 @@ export async function runEnclaveInSeparateProcess(pathToEifFile: string) {
 
 	good(`EnclaveId=${enclaveId}`)
 	console.log('Attach console with:')
-	console.log(`  sudo nitro-cli console --enclave-id "${enclaveId}"`)
+	console.log(`  sudo nitro-cli console --enclave-id "${enclaveId}"\n`)
 
 	/* 4) stream console, tee → file */
 	const logFile = `./ceremony/artifacts/enclave_${enclaveId}.log`
