@@ -179,3 +179,15 @@ mkdir -p "$HOME/job/out"
 # Copy all artifacts to the output directory
 cp -r "$CEREMONY_DIR/artifacts/"* "$HOME/job/out/"
 
+# Sync the $HOME/job/out/ directory to S3
+echo "Syncing $HOME/job/out/ to S3 bucket: s3://${Bucket}/job/out/"
+aws s3 sync "$HOME/job/out/" "s3://${Bucket}/job/out/" --no-progress
+if [ $? -eq 0 ]; then
+  echo "Successfully synced artifacts to S3."
+else
+  echo "ERROR: Failed to sync artifacts to S3. Check logs and IAM permissions for the EC2 instance role." >&2
+  # Depending on requirements, you might want to exit with an error here:
+  # exit 1 
+fi
+
+echo "Script finished."
