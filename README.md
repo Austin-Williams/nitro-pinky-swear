@@ -53,7 +53,7 @@ This command will:
 
 ## TODO
 - Post-ceremony verification script that verifies ceremony integrity using the ceremony artifacts
-- 
+- Make the .EIF build reproducible
 
 ## Limitations
 
