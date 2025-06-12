@@ -201,7 +201,7 @@ async function run() {
 
 	if (runJobFlag) {
 		// Script and file args already validated above for runJobFlag
-		console.log("Starting job run: This will create infrastructure, execute the script, wait for completion, download artifacts, and then delete the infrastructure.")
+		console.log("Starting job run: This will create infrastructure, execute your script, wait for completion, download any artifacts, and then delete the infrastructure.")
 		try {
 			console.log("Step 1/3: Creating infrastructure and waiting for job completion...")
 
