@@ -68,7 +68,7 @@ export async function waitForCompletion(
 	timeoutMs: number = DEFAULT_POLL_TIMEOUT_MS
 ): Promise<boolean> {
 	const startTime = Date.now()
-	console.log(`Polling for signal file s3://${bucketName}/${signalKey} ... (timeout: ${timeoutMs / 1000 / 60} minutes)`)
+	console.log(`Polling for finish signal file s3://${bucketName}/${signalKey} ... (max wait time: ${timeoutMs / 1000 / 60} minutes)`)
 
 	while (Date.now() - startTime < timeoutMs) {
 		try {

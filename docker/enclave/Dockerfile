@@ -108,7 +108,11 @@ COPY --from=circom-builder /opt/attestation_helper/get-attestation /bin/get-atte
 WORKDIR /app
 COPY src/app/enclave/package.json ./package.json
 COPY src/app/enclave/package-lock.json ./package-lock.json
-RUN npm ci --omit=dev --no-audit --no-fund
+
+# copy the tarballs
+COPY src/app/enclave/vendor /npm-vendor
+RUN npm cache add /npm-vendor/*.tgz && \
+	npm ci --offline --omit=dev --no-audit --no-fund
 
 COPY src/app/enclave ./src/app/enclave
 COPY src/app/shared ./src/app/shared

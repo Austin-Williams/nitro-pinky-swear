@@ -109,7 +109,9 @@ export async function orchestrateCreate(cf: CloudFormationClient, s3: S3Client, 
 
 	// 5. Optionally wait for job completion signal from S3
 	if (waitForCompletionSignal) {
-		console.log("\nJob running on EC2 instance. Waiting for it to finish...")
+		console.log(`\nJob running on EC2 instance. Waiting for it to finish...\n
+		You can connect to the session if you want to. Just do:\nnpx --no-install tsx ./src/aws/infra.ts --session\nin a seperate terminal.\n
+		Once connected, you can do:\nsudo su - ec2-user -c "tmux a"\nto watch your script run.\n`)
 		const signalKey = 'job/out/_FINISHED'
 		const success = await waitForCompletion(s3, actualBucketName, signalKey, undefined, waitTimeoutMs)
 		if (success) {
