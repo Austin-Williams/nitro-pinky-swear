@@ -200,7 +200,7 @@ export function assertEifExists(eifPath: string) {
 	if (!fsSync.existsSync(eifPath)) {
 		console.error(`ERROR: EIF file not found at specified path: ${eifPath}`)
 		console.error('Please ensure the EIF file has been built and copied to the correct location.')
-		console.error('You can use `sudo ./docker/build-eif.sh`')
+		console.error('./scripts/build-eif.sh')
 		process.exit(1)
 	}
 	console.log(`EIF file found at: ${eifPath}\n`)
