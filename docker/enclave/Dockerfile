@@ -109,10 +109,7 @@ WORKDIR /app
 COPY src/app/enclave/package.json ./package.json
 COPY src/app/enclave/package-lock.json ./package-lock.json
 
-# copy the tarballs
-COPY src/app/enclave/vendor /npm-vendor
-RUN npm cache add /npm-vendor/*.tgz && \
-	npm ci --offline --omit=dev --no-audit --no-fund
+RUN npm install --omit=dev --no-audit --no-fund
 
 COPY src/app/enclave ./src/app/enclave
 COPY src/app/shared ./src/app/shared
