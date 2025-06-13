@@ -109,17 +109,17 @@ export async function orchestrateCreate(cf: CloudFormationClient, s3: S3Client, 
 
 	// 5. Optionally wait for job completion signal from S3
 	if (waitForCompletionSignal) {
-		console.log('\nJob running on EC2 instance. Waiting for it to finish...')
-		console.log('You can connect to the session if you want to. Just do:\nnpx --no-install tsx ./src/aws/infra.ts --session\nin a seperate terminal.\n')
-		console.log('Once connected, you can do: \nsudo su - ec2 - user - c "tmux a"\nto watch your script run.\n')
+		console.log('\nJob running on EC2 instance. Waiting for it to finish...\n')
+		console.log('You can connect to the EC2 instance via: npx --no-install tsx ./src/aws/infra.ts --session\n')
+		console.log('Once connected, you can attach to the tmux session and watch your script run via: sudo su - ec2-user -c "tmux a"\n')
 		const signalKey = 'job/out/_FINISHED'
 		const success = await waitForCompletion(s3, actualBucketName, signalKey, undefined, waitTimeoutMs)
 		if (success) {
-			console.log("Job completed successfully (detected _FINISHED signal) and artifacts should be available.")
+			console.log('Job completed successfully (detected _FINISHED signal) and artifacts should be available.\n')
 		} else {
-			console.log("Timed out waiting for job completion signal (_FINISHED), or an error occurred during polling.")
+			console.log('Timed out waiting for job completion signal (_FINISHED), or an error occurred during polling.\n')
 		}
 	} else {
-		console.log("\nEC2 stack creation finished. Not waiting for job completion signal as --wait was not specified.")
+		console.log('\nEC2 stack creation finished. Not waiting for job completion signal as --wait was not specified.')
 	}
 }
